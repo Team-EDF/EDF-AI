@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# 환경변수
+.env
+
+# 대용량 데이터 파일
+data/IOT_2020_ixi.zip
+data/IOT_2020_pxp.zip
+data/exiobase_parsed_ixi/
+data/exiobase_parsed_pxp/
+data/SBO/
+
+# IDE
+.idea/
+.vscode/
+
+# 기타
+*.log

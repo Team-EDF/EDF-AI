@@ -1,0 +1,1 @@
+# EXIOBASE, CarbonCloud 카테고리별 탄소배출량 추출 및 계산엔진
