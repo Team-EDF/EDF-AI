@@ -12,7 +12,7 @@ ZIP_PATH_PXP = "../../data/IOT_2020_pxp.zip"
 SAVE_FOLDER_IXI = "../../data/exiobase_parsed_ixi"
 SAVE_FOLDER_PXP = "../../data/exiobase_parsed_pxp"
 
-# 🌟 오직 이 파일 하나만 생성됩니다! (리더님 수작업용)
+
 OUTPUT_RAW_DATA = "../../data/greenstep_raw_sectors_for_mapping.csv"
 
 EUR_TO_KRW_2020 = 1346.0
