@@ -45,9 +45,9 @@ def embed_middle_categories(cursor, model: SentenceTransformer) -> int:
     rows = cursor.fetchall()
 
     for middle_category_id, middle_name in rows:
+        # greenstep_sbert_v2는 prefix 없이 학습 → DB 임베딩도 bare text 사용
         context_text = MIDDLE_CATEGORY_KEYWORD.get(middle_name, middle_name)
-        passage = f"passage: {context_text}"
-        embedding_str = _to_embedding_str(model.encode(passage).tolist())
+        embedding_str = _to_embedding_str(model.encode(context_text).tolist())
         cursor.execute(
             """
             INSERT INTO middle_category_vec (middle_category_id, middle_name, embedding)
@@ -65,9 +65,9 @@ def embed_main_categories(cursor, model: SentenceTransformer) -> int:
     rows = cursor.fetchall()
 
     for main_category_id, main_name in rows:
+        # greenstep_sbert_v2는 prefix 없이 학습 → DB 임베딩도 bare text 사용
         context_text = MAIN_CATEGORY_KEYWORD.get(main_name, main_name)
-        passage = f"passage: {context_text}"
-        embedding_str = _to_embedding_str(model.encode(f"passage: {main_name}").tolist())
+        embedding_str = _to_embedding_str(model.encode(context_text).tolist())
         cursor.execute(
             """
             INSERT INTO main_category_vec (main_category_id, main_name, embedding)
