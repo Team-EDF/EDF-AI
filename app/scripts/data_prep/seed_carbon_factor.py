@@ -7,8 +7,8 @@ import shutil
 # ixi(산업), pxp(제품)
 
 # 설정값 및 경로
-ZIP_PATH_IXI = "../../data/IOT_2020_ixi.zip"
-ZIP_PATH_PXP = "../../data/IOT_2020_pxp.zip"
+ZIP_PATH_IXI = "../../../data/IOT_2020_ixi.zip"
+ZIP_PATH_PXP = "../../../data/IOT_2020_pxp.zip"
 SAVE_FOLDER_IXI = "../../data/exiobase_parsed_ixi"
 SAVE_FOLDER_PXP = "../../data/exiobase_parsed_pxp"
 
