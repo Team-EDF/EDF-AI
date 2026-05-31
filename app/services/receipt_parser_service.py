@@ -1,8 +1,6 @@
 import re
 from typing import Dict, List, Optional
 
-from app.services.category_classifier_service import classify_category
-
 
 def clean_ocr_text(raw_text: str) -> str:
     lines = raw_text.splitlines()
@@ -18,14 +16,20 @@ def clean_ocr_text(raw_text: str) -> str:
     return "\n".join(cleaned_lines)
 
 
-def normalize_item_name(name: str) -> str:
-    name = name.replace("G)", "")
-    name = name.replace("ㄴ", "")
-    name = name.replace("->", "")
-    name = name.replace("(", " ")
-    name = name.replace(")", " ")
-    name = name.strip()
+def normalize_text(value: str) -> str:
+    value = value.replace("G)", "")
+    value = value.replace("ㄴ", "")
+    value = value.replace("->", "")
+    value = value.replace("(", " ")
+    value = value.replace(")", " ")
+    value = re.sub(r"[^가-힣a-zA-Z0-9\s.,/-]", "", value)
+    value = re.sub(r"\s+", " ", value)
 
+    return value.strip()
+
+
+def normalize_item_name(name: str) -> str:
+    name = normalize_text(name)
     name = re.sub(r"[^가-힣a-zA-Z0-9\s]", "", name)
     name = re.sub(r"\s+", " ", name)
 
@@ -34,24 +38,107 @@ def normalize_item_name(name: str) -> str:
 
 def extract_amounts(line: str) -> List[int]:
     numbers = re.findall(r"\d{1,3}(?:,\d{3})+|\d+", line)
-    result = []
+    amounts = []
 
     for number in numbers:
         value = int(number.replace(",", ""))
 
         if value >= 100:
-            result.append(value)
+            amounts.append(value)
 
-    return result
+    return amounts
+
+
+def extract_store_name(text: str) -> Optional[str]:
+    lines = text.splitlines()
+
+    ignore_keywords = [
+        "사업자", "대표", "주소", "전화", "tel",
+        "결제", "승인", "카드", "합계", "부가세",
+        "영수증", "주문번호", "매장번호"
+    ]
+
+    for line in lines[:8]:
+        cleaned = normalize_item_name(line)
+
+        if not cleaned:
+            continue
+
+        if any(keyword.lower() in cleaned.lower() for keyword in ignore_keywords):
+            continue
+
+        if re.search(r"\d{3,}", cleaned):
+            continue
+
+        if len(cleaned) >= 2:
+            return cleaned
+
+    return None
+
+
+def extract_payment_date(text: str) -> Optional[str]:
+    patterns = [
+        r"(20\d{2})[./-](\d{1,2})[./-](\d{1,2})",
+        r"(20\d{2})년\s*(\d{1,2})월\s*(\d{1,2})일",
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, text)
+
+        if match:
+            year, month, day = match.groups()
+            return f"{year}-{int(month):02d}-{int(day):02d}"
+
+    return None
+
+
+def extract_payment_location(text: str) -> Optional[str]:
+    lines = text.splitlines()
+
+    location_keywords = ["주소", "addr", "address", "매장", "지점"]
+
+    for line in lines:
+        cleaned = normalize_text(line)
+
+        if not cleaned:
+            continue
+
+        if any(keyword.lower() in cleaned.lower() for keyword in location_keywords):
+            cleaned = re.sub(r"주소[:：]?", "", cleaned)
+            cleaned = re.sub(r"매장[:：]?", "", cleaned)
+            cleaned = re.sub(r"지점[:：]?", "", cleaned)
+            cleaned = cleaned.strip()
+
+            if len(cleaned) >= 3:
+                return cleaned
+
+    address_patterns = [
+        r"[가-힣]+시\s*[가-힣]+구\s*[가-힣0-9\s.-]+",
+        r"[가-힣]+도\s*[가-힣]+시\s*[가-힣0-9\s.-]+",
+        r"[가-힣]+구\s*[가-힣0-9\s.-]+로\s*\d+",
+        r"[가-힣]+로\s*\d+",
+        r"[가-힣]+길\s*\d+",
+    ]
+
+    for line in lines:
+        cleaned = normalize_text(line)
+
+        for pattern in address_patterns:
+            match = re.search(pattern, cleaned)
+
+            if match:
+                return match.group().strip()
+
+    return None
 
 
 def is_noise_line(line: str) -> bool:
     noise_keywords = [
         "부가세", "과세", "면세", "승인", "카드", "현금",
-        "사업자", "전화", "영수증", "주문번호", "매장",
+        "사업자", "전화", "tel", "영수증", "주문번호", "매장",
         "대표", "주소", "고객", "포인트", "교환", "환불",
         "공급가", "vat", "tax", "할인", "잔액", "거스름돈",
-        "일시불"
+        "일시불", "결제일", "거래일", "판매일"
     ]
 
     lower_line = line.lower()
@@ -79,10 +166,6 @@ def is_option_line(line: str) -> bool:
 
 
 def extract_total_amount(text: str) -> Optional[int]:
-    """
-    결제금액을 가장 우선으로 추출.
-    합계 라인은 OCR 오류가 많으므로 후순위로 처리.
-    """
     lines = text.splitlines()
 
     priority_keywords = ["결제금액", "받을금액", "총금액", "총액"]
@@ -96,7 +179,6 @@ def extract_total_amount(text: str) -> Optional[int]:
                 if amounts:
                     return amounts[-1]
 
-                # 다음 1~2줄에서 금액 탐색
                 for j in range(i + 1, min(i + 3, len(lines))):
                     next_amounts = extract_amounts(lines[j])
 
@@ -116,25 +198,29 @@ def is_valid_item_name(name: str) -> bool:
     if re.fullmatch(r"\d+", name):
         return False
 
-    if name in ["합계", "결제금액"]:
+    invalid_keywords = [
+        "합계", "결제금액", "부가세", "승인", "카드",
+        "주소", "대표", "사업자", "전화", "영수증"
+    ]
+
+    if any(keyword in name for keyword in invalid_keywords):
         return False
 
     return True
 
 
 def choose_item_price(amounts: List[int], total_amount: Optional[int]) -> Optional[int]:
-    """
-    OCR이 6,500 16,500처럼 잘못 붙인 경우를 보정.
-    상품 가격 후보 중 total_amount보다 작거나 같은 값만 사용.
-    여러 개면 가장 작은 금액을 우선 사용.
-    """
     if not amounts:
         return None
 
     candidates = amounts
 
     if total_amount:
-        candidates = [amount for amount in amounts if amount <= total_amount]
+        candidates = [
+            amount
+            for amount in amounts
+            if amount <= total_amount
+        ]
 
     if not candidates:
         return None
@@ -184,12 +270,9 @@ def extract_items(text: str, total_amount: Optional[int]) -> List[Dict]:
         if price is None or price <= 0:
             continue
 
-        category = classify_category(final_name)
-
         items.append({
             "name": final_name,
-            "price": price,
-            "category": category
+            "price": price
         })
 
         current_item_name = None
@@ -200,11 +283,13 @@ def extract_items(text: str, total_amount: Optional[int]) -> List[Dict]:
 def parse_receipt_text(raw_text: str) -> Dict:
     cleaned_text = clean_ocr_text(raw_text)
     total_amount = extract_total_amount(cleaned_text)
-    items = extract_items(cleaned_text, total_amount)
 
     return {
+        "store_name": extract_store_name(cleaned_text),
+        "payment_date": extract_payment_date(cleaned_text),
+        "payment_location": extract_payment_location(cleaned_text),
         "total_amount": total_amount,
-        "items": items,
+        "items": extract_items(cleaned_text, total_amount),
         "raw_text": raw_text,
         "cleaned_text": cleaned_text
     }
