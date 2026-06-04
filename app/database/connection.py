@@ -19,10 +19,11 @@ def get_db_connection():
 def get_db():
     """
     FastAPI Depends 전용 DB 커넥션 제공자.
-    요청 진입점에서 딱 한 번 연결을 맺고, 요청 종료 시 자동으로 닫아
-    하위 서비스 레이어들이 동일 커넥션을 공유하도록 한다.
+    요청 진입점에서 딱 한 번 연결을 맺고,
+    요청 종료 시 자동으로 닫는다.
     """
     conn = get_db_connection()
+
     try:
         yield conn
     finally:
