@@ -1,4 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# 환경변수 / 인증키
 .env
 credentials/
-venv/
-__pycache__/
+
+# 대용량 데이터 파일
+data/IOT_2020_ixi.zip
+data/IOT_2020_pxp.zip
+data/exiobase_parsed_ixi/
+data/exiobase_parsed_pxp/
+data/SBO/
+
+# IDE
+.idea/
+.vscode/
+
+# Claude Code 로컬 설정
+.claude/settings.local.json
+.claude/
+
+# 기타
+*.log
+app/services/greenstep_sbert_v2/

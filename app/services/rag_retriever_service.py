@@ -10,7 +10,7 @@ CHROMA_DIR = "chroma_db"
 
 def retrieve_eco_documents(query: str, k: int = 3) -> str:
     embeddings = GoogleGenerativeAIEmbeddings(
-        model="models/text-embedding-004"
+        model="models/gemini-embedding-001"
     )
 
     vector_store = Chroma(
