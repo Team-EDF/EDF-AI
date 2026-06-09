@@ -2,7 +2,7 @@ from fastapi import FastAPI, UploadFile, File, Depends, Form
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
-# from app.api.routes import merchant
+from app.api.routes import merchant
 from app.database import Base, engine, SessionLocal
 
 from app.models.consumption_record import ConsumptionRecord
@@ -22,7 +22,7 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="GreenStep AI API", version="1.0.0")
 
-# app.include_router(merchant.router, prefix="/api", tags=["classify"])
+app.include_router(merchant.router, prefix="/api", tags=["classify"])
 
 
 def get_db():
@@ -106,17 +106,20 @@ def chat_feedback(request: ChatFeedbackRequest, db: Session = Depends(get_db)):
         user_id=request.user_id
     )
 
-    feedback = generate_feedback(
+    result = generate_feedback(
         user_message=request.message,
         consumption_summary=consumption_summary
     )
+
+    feedback_text = result["answer"]
+    rag_sources = result["rag_sources"]
 
     saved_chat = save_chat_history(
         db=db,
         user_id=request.user_id,
         user_message=request.message,
         consumption_summary=consumption_summary,
-        ai_response=feedback
+        ai_response=feedback_text
     )
 
     return {
@@ -124,5 +127,6 @@ def chat_feedback(request: ChatFeedbackRequest, db: Session = Depends(get_db)):
         "user_id": request.user_id,
         "message": request.message,
         "consumption_summary": consumption_summary,
-        "feedback": feedback
+        "feedback": feedback_text,
+        "rag_sources": rag_sources
     }
