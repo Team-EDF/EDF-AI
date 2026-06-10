@@ -10,7 +10,7 @@ venv/
 .env
 credentials/
 debug_*.py
-static/
+chroma_db/
 
 # 대용량 데이터 파일
 data/IOT_2020_ixi.zip

@@ -1,8 +1,14 @@
+import os
 from google import genai
+from dotenv import load_dotenv
 from app.services.rag_service import search_rag
 
-client = genai.Client()
+load_dotenv()
 
+_PROJECT_ID = os.getenv("GEMINI_PROJECT_ID", "gen-lang-client-0224879870")
+_LOCATION   = os.getenv("GEMINI_LOCATION", "us-central1")
+
+client = genai.Client(vertexai=True, project=_PROJECT_ID, location=_LOCATION)
 
 def generate_feedback(user_message: str, consumption_summary: dict):
     total_carbon_kg = consumption_summary.get("total_carbon_kg")
