@@ -7,7 +7,10 @@ from app.database.connection import get_db_connection
 
 load_dotenv()
 
-GEMINI_MODEL = "gemini-2.5-flash-lite"
+GEMINI_MODEL = "gemini-2.5-flash"
+
+_PROJECT_ID = os.getenv("GEMINI_PROJECT_ID", "gen-lang-client-0224879870")
+_LOCATION   = os.getenv("GEMINI_LOCATION", "us-central1")
 
 # 가맹점명 분류용 시스템 프롬프트 (main_category 선택)
 _MERCHANT_SYSTEM = (
@@ -32,7 +35,7 @@ class GeminiClassifier:
     @classmethod
     def _get_client(cls) -> genai.Client:
         if cls._client is None:
-            cls._client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+            cls._client = genai.Client(vertexai=True, project=_PROJECT_ID, location=_LOCATION)
         return cls._client
 
     @classmethod
@@ -73,6 +76,7 @@ class GeminiClassifier:
                     system_instruction=system_prompt,
                     temperature=0.0,
                     max_output_tokens=30,
+                    thinking_config=types.ThinkingConfig(thinking_budget=0),
                 ),
             )
             return response.text.strip() if response.text else None

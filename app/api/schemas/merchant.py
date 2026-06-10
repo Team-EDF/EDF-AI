@@ -49,8 +49,11 @@ class ClassifyResponse(BaseModel):
     merchant_name: str
     payment_location: Optional[str]
     payment_date: Optional[str]
+    total_amount_krw: Optional[float] = None     # 총 결제금액 (KRW)
     merchant_category: Optional[CategoryResult]  # items 없을 때 가맹점 기반 분류 결과
     merchant_carbon_kg: Optional[float]          # 가맹점 기반 탄소배출량 (kgCO2eq)
     item_results: Optional[List[ItemResult]]     # items 있을 때 품목별 분류 결과
     total_carbon_kg: Optional[float]             # 품목 탄소배출량 합계 (kgCO2eq)
     record_id: Optional[int] = None              # DB 저장 후 부여되는 consumption_records PK
+    ocr_raw_text: Optional[str] = None           # OCR 엔드포인트 전용: Vision API 원본 텍스트
+    ocr_engine: Optional[str] = None             # OCR 엔드포인트 전용: 실제 사용된 엔진명 (google_vision/gemini_vision/gpt_vision/clova)
