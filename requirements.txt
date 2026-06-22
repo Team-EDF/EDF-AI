@@ -14,3 +14,10 @@ langchain-google-genai>=4.2.2
 sentence-transformers
 pgvector
 openai
+python-multipart
+requests
+pypdf
+langchain-chroma
+langchain-huggingface
+langchain-text-splitters
+Pillow

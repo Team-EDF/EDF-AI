@@ -74,6 +74,12 @@ def chat_feedback(request: ChatFeedbackRequest, db: Session = Depends(get_db)):
         user_id=request.user_id,
         user_message=request.message,
         consumption_summary=request.consumption_summary,
+        # [원래 코드 복원]
         ai_response=response
     )
     return {"chat_id": saved_chat.id, "feedback": response}
+
+    # [변경된 코드(주석 처리됨)]
+    #     ai_response=response["answer"] # JSON 대신 순수 텍스트 답변 저장
+    # )
+    # return {"chat_id": saved_chat.id, "feedback": response["answer"]} # 프론트엔드가 기대하는 순수 텍스트 답변 반환

@@ -32,11 +32,22 @@ class GeminiClassifier:
     _main_categories: list[str] | None = None
     _middle_categories: list[str] | None = None
 
+    # [원래 코드 복원]
     @classmethod
     def _get_client(cls) -> genai.Client:
         if cls._client is None:
             cls._client = genai.Client(vertexai=True, project=_PROJECT_ID, location=_LOCATION)
         return cls._client
+
+    # [변경된 코드(주석 처리됨)]
+    # @classmethod
+    # def _get_client(cls) -> genai.Client:
+    #     if cls._client is None:
+    #         api_key = os.getenv("GEMINI_API_KEY")
+    #         if not api_key:
+    #             print("Warning: GEMINI_API_KEY is not set.")
+    #         cls._client = genai.Client(api_key=api_key)
+    #     return cls._client
 
     @classmethod
     def _load_main_categories(cls) -> list[str]:

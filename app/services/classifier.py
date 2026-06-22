@@ -29,11 +29,23 @@ class MerchantClassifier:
     _model: SentenceTransformer | None = None
     _gemini: GeminiClassifier = GeminiClassifier()
 
+    # [원래 코드 복원]
     @classmethod
     def _get_model(cls) -> SentenceTransformer:
         if cls._model is None:
             cls._model = SentenceTransformer(SBERT_MODEL_NAME)
         return cls._model
+
+    # [변경된 코드(주석 처리됨)]
+    # @classmethod
+    # def _get_model(cls) -> SentenceTransformer | None:
+    #     if cls._model is None:
+    #         try:
+    #             cls._model = SentenceTransformer(SBERT_MODEL_NAME)
+    #         except Exception as e:
+    #             print(f"Failed to load SBERT model: {e}")
+    #             cls._model = None
+    #     return cls._model
 
     @staticmethod
     def _to_embedding_str(vec: list) -> str:
@@ -159,10 +171,21 @@ class MerchantClassifier:
 
     def _search_middle(self, query_text: str, conn) -> dict | None:
         """middle_category_vec에서 코사인 유사도 검색 (영수증 품목용)."""
+        # [원래 코드 복원]
         # greenstep_sbert_v2는 prefix 없이 학습 → 추론도 동일하게 bare text 사용
         embedding_str = self._to_embedding_str(
             self._get_model().encode(query_text).tolist()
         )
+
+        # [변경된 코드(주석 처리됨)]
+        # model = self._get_model()
+        # if model is None:
+        #     return None
+        #
+        # # greenstep_sbert_v2는 prefix 없이 학습 → 추론도 동일하게 bare text 사용
+        # embedding_str = self._to_embedding_str(
+        #     model.encode(query_text).tolist()
+        # )
         cursor = conn.cursor()
         cursor.execute(
             """
@@ -189,10 +212,21 @@ class MerchantClassifier:
 
     def _search_all_categories(self, query_text: str, conn) -> dict | None:
         """main_category_vec 우선 검색, 임계값 미달 시 middle_category_vec fallback (가맹점용)."""
+        # [원래 코드 복원]
         # greenstep_sbert_v2는 prefix 없이 학습 → 추론도 동일하게 bare text 사용
         embedding_str = self._to_embedding_str(
             self._get_model().encode(query_text).tolist()
         )
+
+        # [변경된 코드(주석 처리됨)]
+        # model = self._get_model()
+        # if model is None:
+        #     return None
+        #
+        # # greenstep_sbert_v2는 prefix 없이 학습 → 추론도 동일하게 bare text 사용
+        # embedding_str = self._to_embedding_str(
+        #     model.encode(query_text).tolist()
+        # )
         cursor = conn.cursor()
 
         cursor.execute(

@@ -5,10 +5,22 @@ CHROMA_DIR = "chroma_db"
 EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
 
+# [원래 코드 복원]
 def get_embeddings():
     return HuggingFaceEmbeddings(
         model_name=EMBEDDING_MODEL
     )
+
+# [변경된 코드(주석 처리됨)]
+# _embeddings = None
+#
+# def get_embeddings():
+#     global _embeddings
+#     if _embeddings is None:
+#         _embeddings = HuggingFaceEmbeddings(
+#             model_name=EMBEDDING_MODEL
+#         )
+#     return _embeddings
 
 
 def search_rag(query: str, k: int = 3):

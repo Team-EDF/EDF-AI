@@ -5,10 +5,15 @@ from app.services.rag_service import search_rag
 
 load_dotenv()
 
+# [원래 코드 복원]
 _PROJECT_ID = os.getenv("GEMINI_PROJECT_ID", "gen-lang-client-0224879870")
 _LOCATION   = os.getenv("GEMINI_LOCATION", "us-central1")
 
 client = genai.Client(vertexai=True, project=_PROJECT_ID, location=_LOCATION)
+
+# [변경된 코드(주석 처리됨)]
+# api_key = os.getenv("GEMINI_API_KEY")
+# client = genai.Client(api_key=api_key)
 
 def generate_feedback(user_message: str, consumption_summary: dict):
     total_carbon_kg = consumption_summary.get("total_carbon_kg")

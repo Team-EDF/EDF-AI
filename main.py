@@ -99,7 +99,11 @@ def chat_feedback(request: ChatFeedbackRequest, db: Session = Depends(get_db)):
         consumption_summary=request.consumption_summary
     )
 
+    # [원래 코드 복원]
     feedback_text = feedback if isinstance(feedback, str) else json.dumps(feedback, ensure_ascii=False)
+
+    # [변경된 코드(주석 처리됨)]
+    # feedback_text = feedback if isinstance(feedback, str) else feedback.get("answer", json.dumps(feedback, ensure_ascii=False))
 
     saved_chat = save_chat_history(
         db=db,
