@@ -358,3 +358,4 @@ class MerchantClassifier:
         finally:
             if own_conn:
                 conn.close()
+

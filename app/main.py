@@ -1,28 +1,34 @@
-from fastapi import FastAPI, UploadFile, File, Depends, Form
+from fastapi import FastAPI, Depends
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
-from app.api.routes import merchant
 from app.database import Base, engine, SessionLocal
+from app.api.routes import merchant, ocr
 
-from app.models.consumption_record import ConsumptionRecord
-from app.models.chat_history import ChatHistory
-
-from app.services.ocr_service import extract_text_from_image
-from app.services.ocr_save_service import save_ocr_result
-from app.services.receipt_parser_service import parse_receipt_text
 from app.services.eco_feedback_service import generate_eco_feedback
 from app.services.rag_index_service import build_rag_index
 from app.services.feedback_service import generate_feedback
 from app.services.chat_history_service import save_chat_history
-from app.services.consumption_record_service import save_consumption_records
 from app.services.consumption_summary_service import get_user_consumption_summary
 
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="GreenStep AI API", version="1.0.0")
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(merchant.router, prefix="/api", tags=["classify"])
+app.include_router(ocr.router, prefix="/api", tags=["ocr"])
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 def get_db():
@@ -34,62 +40,13 @@ def get_db():
 
 
 @app.get("/")
-def root():
-    return {"message": "AI Server 실행 성공"}
+def serve_ui():
+    return FileResponse("static/index.html")
 
 
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
-
-
-@app.post("/ocr")
-async def ocr(
-    user_id: int = Form(...),
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db)
-):
-    print("[OCR] 1. 요청 수신")
-
-    image_bytes = await file.read()
-    print("[OCR] 2. 이미지 읽기 완료")
-
-    text = extract_text_from_image(image_bytes)
-    print("[OCR] 3. Google Vision OCR 완료")
-
-    saved_ocr = save_ocr_result(
-        db=db,
-        filename=file.filename,
-        raw_text=text
-    )
-    print("[OCR] 4. OCR 원문 DB 저장 완료")
-
-    parsed_result = parse_receipt_text(text)
-    print("[OCR] 5. 영수증 파싱 완료")
-    print("[OCR] parsed_result:", parsed_result)
-
-    saved_consumptions = save_consumption_records(
-        db=db,
-        user_id=user_id,
-        parsed_result=parsed_result,
-        ocr_id=saved_ocr.id
-    )
-    print("[OCR] 6. 소비기록 DB 저장 완료")
-    print("[OCR] saved_consumption_count:", len(saved_consumptions))
-
-    return {
-        "ocr_id": saved_ocr.id,
-        "user_id": user_id,
-        "filename": saved_ocr.filename,
-        "text": saved_ocr.raw_text,
-        "parsed_result": parsed_result,
-        "saved_consumption_count": len(saved_consumptions),
-        "created_at": saved_ocr.created_at
-    }
-
-@app.post("/parse-test")
-def parse_test(raw_text: str):
-    return parse_receipt_text(raw_text)
 
 
 @app.post("/feedback")

@@ -185,9 +185,9 @@ def get_median_kgco2eq_kg_to_xlsx() -> float | None:
 
     print("식품명을 한 줄씩 입력하세요. 빈 줄에서 Enter로 종료:")
 
-    values = []
-    matched = []
-    missing = []
+    values: list[float] = []
+    matched: list[tuple[str, float]] = []
+    missing: list[str] = []
 
     while True:
         try:

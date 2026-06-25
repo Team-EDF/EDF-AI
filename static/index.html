@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GreenStep – 영수증 탄소 분석</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', sans-serif; background: #f0f4f0; color: #1a2e1a; min-height: 100vh; }
+
+    header {
+      background: #2d6a2d; color: white;
+      padding: 18px 32px; display: flex; align-items: center; gap: 12px;
+    }
+    header h1 { font-size: 1.4rem; font-weight: 700; }
+    header span { font-size: 0.9rem; opacity: 0.8; }
+
+    .container {
+      max-width: 960px; margin: 32px auto; padding: 0 16px;
+      display: grid; grid-template-columns: 360px 1fr; gap: 24px;
+      align-items: start;
+    }
+
+    .card {
+      background: white; border-radius: 12px; padding: 24px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    .card h2 {
+      font-size: 1rem; font-weight: 600; color: #2d6a2d;
+      margin-bottom: 16px; padding-bottom: 8px; border-bottom: 2px solid #e8f5e8;
+    }
+
+    .engine-badge {
+      display: inline-block; font-size: 0.72rem; padding: 2px 8px;
+      border-radius: 20px; font-weight: 700; margin-left: 6px;
+    }
+    .engine-badge.google  { background: #e8f4fd; color: #1565c0; }
+    .engine-badge.gemini  { background: #f3e5f5; color: #6a1b9a; }
+    .engine-badge.gpt     { background: #fff3e0; color: #e65100; }
+    .engine-badge.clova   { background: #e8f5e8; color: #2d6a2d; }
+    .engine-badge.unknown { background: #f5f5f5; color: #757575; }
+
+    /* 업로드 영역 */
+    .upload-area {
+      border: 2px dashed #cde0cd; border-radius: 10px; padding: 32px 20px;
+      text-align: center; cursor: pointer; transition: all 0.2s;
+      position: relative; margin-bottom: 16px;
+    }
+    .upload-area:hover, .upload-area.drag { background: #f0faf0; border-color: #2d6a2d; }
+    .upload-area input[type="file"] {
+      position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+    }
+    .upload-area .icon { font-size: 2.4rem; margin-bottom: 8px; }
+    .upload-area .hint { font-size: 0.82rem; color: #aaa; margin-top: 4px; }
+    #fileName { font-size: 0.85rem; color: #2d6a2d; font-weight: 600; margin-top: 6px; }
+
+    #preview {
+      width: 100%; max-height: 220px; object-fit: contain;
+      border-radius: 8px; display: none; margin-bottom: 14px;
+      border: 1px solid #e0e0e0;
+    }
+
+    /* override 펼치기 */
+    .toggle-override {
+      font-size: 0.8rem; color: #888; cursor: pointer; text-align: center;
+      margin-bottom: 14px; user-select: none;
+    }
+    .toggle-override:hover { color: #2d6a2d; }
+    .override-fields { display: none; }
+    .override-fields.open { display: block; }
+
+    label { font-size: 0.82rem; font-weight: 500; color: #555; display: block; margin-bottom: 3px; }
+    input[type="text"], input[type="date"] {
+      width: 100%; padding: 8px 11px;
+      border: 1px solid #cde0cd; border-radius: 7px; font-size: 0.88rem;
+      margin-bottom: 12px; outline: none; transition: border-color 0.2s;
+    }
+    input:focus { border-color: #2d6a2d; }
+
+    .btn {
+      width: 100%; padding: 12px; background: #2d6a2d; color: white;
+      border: none; border-radius: 8px; font-size: 1rem; font-weight: 600;
+      cursor: pointer; transition: background 0.2s; display: flex;
+      align-items: center; justify-content: center; gap: 8px;
+    }
+    .btn:hover { background: #245224; }
+    .btn:disabled { background: #aaa; cursor: not-allowed; }
+    .spinner {
+      display: none; width: 18px; height: 18px;
+      border: 3px solid rgba(255,255,255,0.4); border-top-color: white;
+      border-radius: 50%; animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .error-box {
+      display: none; background: #fff3f3; border: 1px solid #f5c6cb;
+      border-radius: 8px; padding: 10px 14px; color: #721c24;
+      font-size: 0.85rem; margin-top: 12px;
+    }
+    .error-box.visible { display: block; }
+
+    /* 오른쪽: 결과 */
+    .right-col { display: flex; flex-direction: column; gap: 20px; }
+
+    /* 인포 카드 (분석 전) */
+    #infoCard .pipeline { font-size: 0.84rem; line-height: 2; color: #444; }
+    .badge-guide { margin-top: 16px; padding: 12px; background: #f6fcf6; border-radius: 8px; font-size: 0.78rem; color: #555; }
+
+    /* 영수증 정보 */
+    #receiptInfo { display: none; }
+    .info-row { display: flex; gap: 8px; margin-bottom: 6px; font-size: 0.85rem; }
+    .info-label { color: #888; min-width: 70px; }
+    .info-val { font-weight: 600; color: #1a2e1a; }
+
+    /* 요약 */
+    #summaryRow { display: none; gap: 12px; }
+    #summaryRow.visible { display: grid; grid-template-columns: repeat(3,1fr); }
+    .stat-card {
+      background: #f6fcf6; border: 1px solid #cde0cd;
+      border-radius: 10px; padding: 14px; text-align: center;
+    }
+    .stat-card .val { font-size: 1.5rem; font-weight: 700; color: #2d6a2d; }
+    .stat-card .lbl { font-size: 0.75rem; color: #777; margin-top: 3px; }
+
+    /* 테이블 + 차트 */
+    #resultGrid { display: none; gap: 20px; }
+    #resultGrid.visible { display: grid; grid-template-columns: 1fr 1fr; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.83rem; }
+    th {
+      background: #f0f8f0; padding: 7px 9px; text-align: left;
+      font-weight: 600; color: #2d6a2d; border-bottom: 2px solid #cde0cd;
+    }
+    td { padding: 7px 9px; border-bottom: 1px solid #f0f0f0; }
+    tr:last-child td { border-bottom: none; }
+
+    .badge {
+      display: inline-block; padding: 2px 7px; border-radius: 20px;
+      font-size: 0.72rem; font-weight: 600;
+    }
+    .b1 { background:#d4edda; color:#155724; }
+    .b2 { background:#cce5ff; color:#004085; }
+    .b3 { background:#fff3cd; color:#856404; }
+    .b4 { background:#f8d7da; color:#721c24; }
+
+    .chart-wrap { position: relative; height: 240px; }
+
+    /* 디버그 패널 (OCR raw / Clova JSON) */
+    #rawTextCard { display: none; }
+    .raw-toggle {
+      font-size: 0.82rem; color: #888; cursor: pointer;
+      user-select: none; padding: 4px 0;
+    }
+    .raw-toggle:hover { color: #2d6a2d; }
+    #rawTextBox {
+      display: none; margin-top: 10px;
+      background: #1e1e1e; color: #d4d4d4;
+      border-radius: 8px; padding: 14px;
+      font-family: 'Consolas', monospace; font-size: 0.78rem;
+      line-height: 1.6; white-space: pre-wrap; word-break: break-all;
+      max-height: 400px; overflow-y: auto;
+    }
+    #rawTextBox.open { display: block; }
+    .copy-btn {
+      float: right; font-size: 0.75rem; background: #444;
+      color: #ccc; border: none; border-radius: 4px;
+      padding: 2px 8px; cursor: pointer; margin-left: 8px;
+    }
+    .copy-btn:hover { background: #666; }
+
+    /* Clova JSON 색상 강조 */
+    .json-key   { color: #9cdcfe; }
+    .json-str   { color: #ce9178; }
+    .json-num   { color: #b5cea8; }
+    .json-bool  { color: #569cd6; }
+    .json-null  { color: #569cd6; }
+
+    /* 피드백 챗 */
+    #chatSection { display: none; margin-top: 0; }
+    #chatSection.visible { display: block; }
+    .chat-messages {
+      min-height: 120px; max-height: 340px; overflow-y: auto;
+      display: flex; flex-direction: column; gap: 10px;
+      padding: 4px 0 12px;
+    }
+    .chat-bubble {
+      max-width: 85%; padding: 10px 14px; border-radius: 14px;
+      font-size: 0.87rem; line-height: 1.55; white-space: pre-wrap; word-break: break-word;
+    }
+    .chat-bubble.user {
+      background: #2d6a2d; color: white; align-self: flex-end;
+      border-bottom-right-radius: 4px;
+    }
+    .chat-bubble.ai {
+      background: #f0f8f0; color: #1a2e1a; align-self: flex-start;
+      border: 1px solid #cde0cd; border-bottom-left-radius: 4px;
+    }
+    .chat-bubble.typing { color: #888; font-style: italic; background: #f5f5f5; border: 1px solid #e0e0e0; }
+    .chat-input-row {
+      display: flex; gap: 8px; margin-top: 12px;
+    }
+    .chat-input-row input {
+      flex: 1; padding: 9px 13px; border: 1px solid #cde0cd;
+      border-radius: 8px; font-size: 0.88rem; outline: none;
+      transition: border-color 0.2s; margin-bottom: 0;
+    }
+    .chat-input-row input:focus { border-color: #2d6a2d; }
+    .chat-send-btn {
+      padding: 9px 18px; background: #2d6a2d; color: white;
+      border: none; border-radius: 8px; font-size: 0.88rem;
+      font-weight: 600; cursor: pointer; transition: background 0.2s;
+      white-space: nowrap;
+    }
+    .chat-send-btn:hover { background: #245224; }
+    .chat-send-btn:disabled { background: #aaa; cursor: not-allowed; }
+    .chat-summary-tag {
+      font-size: 0.76rem; color: #888; margin-bottom: 8px;
+      padding: 5px 10px; background: #f6fcf6; border-radius: 6px;
+      border: 1px solid #e0ede0;
+    }
+
+    @media (max-width: 700px) {
+      .container { grid-template-columns: 1fr; }
+      #resultGrid.visible { grid-template-columns: 1fr; }
+      #summaryRow.visible { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>🌿 GreenStep</h1>
+    <span>영수증 탄소 배출량 분석기</span>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- 왼쪽: 업로드 폼 -->
+  <div class="card">
+    <h2>영수증 업로드</h2>
+    <form id="uploadForm">
+
+      <div class="upload-area" id="uploadArea">
+        <input type="file" id="imageFile" accept="image/*" />
+        <div class="icon">📷</div>
+        <p>영수증 사진을 드래그하거나 클릭해서 업로드</p>
+        <p class="hint">JPG · PNG · WEBP 지원</p>
+        <p id="fileName"></p>
+      </div>
+
+      <img id="preview" alt="미리보기" />
+
+      <div class="toggle-override" id="toggleOverride">
+        ▸ 가맹점명 · 위치 · 날짜 직접 입력 (OCR 추출 실패 시)
+      </div>
+      <div class="override-fields" id="overrideFields">
+        <label>가맹점명</label>
+        <input type="text" id="merchantName" placeholder="예: 스타벅스" />
+        <label>결제 위치</label>
+        <input type="text" id="paymentLocation" placeholder="예: 서울시 강남구 테헤란로 123" />
+        <label>결제 일자</label>
+        <input type="date" id="paymentDate" />
+      </div>
+
+      <button type="submit" class="btn" id="submitBtn">
+        <span id="btnText">분석 시작</span>
+        <div class="spinner" id="spinner"></div>
+      </button>
+
+      <div class="error-box" id="errorBox"></div>
+    </form>
+  </div>
+
+  <!-- 오른쪽: 결과 -->
+  <div class="right-col">
+
+    <!-- 분석 전 안내 -->
+    <div class="card" id="infoCard">
+      <h2>분류 파이프라인</h2>
+      <div class="pipeline">
+        📸 <b>OCR</b> — 영수증 전체 텍스트 추출<br/>
+        &nbsp;&nbsp;&nbsp;↓<br/>
+        🔍 <b>파싱</b> — 가맹점명 · 위치 · 날짜 · 품목 · 금액 추출<br/>
+        &nbsp;&nbsp;&nbsp;↓<br/>
+        🗄️ <b>1단계</b> — DB 직결 매핑 (FAST_TRACK)<br/>
+        &nbsp;&nbsp;&nbsp;↓<br/>
+        🧠 <b>2단계</b> — SBERT 벡터 유사도<br/>
+        &nbsp;&nbsp;&nbsp;↓<br/>
+        🤖 <b>3단계</b> — Gemini API fallback<br/>
+        &nbsp;&nbsp;&nbsp;↓<br/>
+        🌿 <b>탄소 계산</b> — kgCO₂eq / KRW × 금액
+      </div>
+      <div class="badge-guide">
+        <b>분류 단계 배지</b>&nbsp;
+        <span class="badge b1">DB 직결</span>&nbsp;
+        <span class="badge b2">SBERT</span>&nbsp;
+        <span class="badge b3">Gemini</span>&nbsp;
+        <span class="badge b4">미분류</span>
+      </div>
+    </div>
+
+    <!-- 영수증 정보 (결과 후) -->
+    <div class="card" id="receiptInfo">
+      <h2>인식된 영수증 정보 <span id="engineBadge" class="engine-badge google">Google</span></h2>
+      <div class="info-row"><span class="info-label">가맹점명</span><span class="info-val" id="riMerchant">-</span></div>
+      <div class="info-row"><span class="info-label">결제 위치</span><span class="info-val" id="riLocation">-</span></div>
+      <div class="info-row"><span class="info-label">결제 일자</span><span class="info-val" id="riDate">-</span></div>
+      <div class="info-row"><span class="info-label">총 결제액</span><span class="info-val" id="riTotal">-</span></div>
+    </div>
+
+    <!-- 요약 통계 -->
+    <div id="summaryRow">
+      <div class="stat-card">
+        <div class="val" id="statItems">-</div>
+        <div class="lbl">분석 품목 수</div>
+      </div>
+      <div class="stat-card">
+        <div class="val" id="statCarbon">-</div>
+        <div class="lbl">총 탄소 (kgCO₂eq)</div>
+      </div>
+      <div class="stat-card">
+        <div class="val" id="statCarbonPerKrw">-</div>
+        <div class="lbl">원당 탄소 (g/원)</div>
+      </div>
+    </div>
+
+    <!-- 품목 테이블 + 파이차트 -->
+    <div id="resultGrid">
+      <div class="card">
+        <h2>품목별 분류 결과</h2>
+        <table>
+          <thead>
+            <tr><th>품목명</th><th>금액</th><th>카테고리</th><th>단계</th><th>탄소(kg)</th></tr>
+          </thead>
+          <tbody id="itemTableBody"></tbody>
+        </table>
+      </div>
+      <div class="card">
+        <h2>카테고리별 탄소 비율</h2>
+        <div class="chart-wrap"><canvas id="pieChart"></canvas></div>
+      </div>
+    </div>
+
+    <!-- 디버그 패널 (Google: raw text / Clova: JSON) -->
+    <div class="card" id="rawTextCard">
+      <h2 id="rawPanelTitle">OCR 원본 텍스트 <span style="font-size:0.75rem;color:#888;font-weight:400">(파싱 디버깅용)</span></h2>
+      <div class="raw-toggle" id="rawToggle">▸ 펼쳐서 보기</div>
+      <div id="rawTextBox">
+        <button class="copy-btn" id="copyBtn">복사</button>
+        <span id="rawTextContent"></span>
+      </div>
+    </div>
+
+    <!-- 피드백 챗 -->
+    <div class="card" id="chatSection">
+      <h2>🌿 친환경 소비 피드백 챗</h2>
+      <div class="chat-summary-tag" id="chatSummaryTag"></div>
+      <div class="chat-messages" id="chatMessages"></div>
+      <div class="chat-input-row">
+        <input type="text" id="chatInput" placeholder="궁금한 점을 물어보세요... (예: 탄소 줄이는 방법은?)" />
+        <button class="chat-send-btn" id="chatSendBtn">전송</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  const API_BASE = 'http://localhost:8000';
+  let pieChart = null;
+
+  // ── 미리보기 ───────────────────────────────────────────────────────────────
+  const imageFile = document.getElementById('imageFile');
+  const preview = document.getElementById('preview');
+  const uploadArea = document.getElementById('uploadArea');
+  const fileName = document.getElementById('fileName');
+
+  imageFile.addEventListener('change', () => {
+    const f = imageFile.files[0];
+    if (f) showPreview(f);
+  });
+
+  uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.classList.add('drag'); });
+  uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('drag'));
+  uploadArea.addEventListener('drop', e => {
+    e.preventDefault(); uploadArea.classList.remove('drag');
+    const f = e.dataTransfer.files[0];
+    if (f) { imageFile.files = e.dataTransfer.files; showPreview(f); }
+  });
+
+  function showPreview(f) {
+    preview.src = URL.createObjectURL(f);
+    preview.style.display = 'block';
+    fileName.textContent = '📎 ' + f.name;
+  }
+
+  // ── override 토글 ──────────────────────────────────────────────────────────
+  document.getElementById('toggleOverride').addEventListener('click', () => {
+    const el = document.getElementById('overrideFields');
+    const tog = document.getElementById('toggleOverride');
+    el.classList.toggle('open');
+    tog.textContent = el.classList.contains('open')
+      ? '▾ 가맹점명 · 위치 · 날짜 직접 입력 (접기)'
+      : '▸ 가맹점명 · 위치 · 날짜 직접 입력 (OCR 추출 실패 시)';
+  });
+
+  // ── 폼 제출 ────────────────────────────────────────────────────────────────
+  document.getElementById('uploadForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const f = imageFile.files[0];
+    if (!f) { showError('영수증 이미지를 선택해주세요.'); return; }
+
+    setLoading(true); hideError();
+
+    const fd = new FormData();
+    fd.append('image', f);
+    const mn = document.getElementById('merchantName').value.trim();
+    const pl = document.getElementById('paymentLocation').value.trim();
+    const pd = document.getElementById('paymentDate').value;
+    if (mn) fd.append('merchant_name_override', mn);
+    if (pl) fd.append('payment_location_override', pl);
+    if (pd) fd.append('payment_date_override', pd);
+
+    const endpoint = `${API_BASE}/api/ocr/classify`;
+
+    try {
+      const res = await fetch(endpoint, { method: 'POST', body: fd });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: '서버 오류' }));
+        throw new Error(err.detail || `HTTP ${res.status}`);
+      }
+      renderResult(await res.json());
+    } catch (err) {
+      showError('오류: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  });
+
+  // ── 결과 렌더링 ────────────────────────────────────────────────────────────
+  function renderResult(data) {
+    // 실제 사용된 OCR 엔진 배지 표시 (fallback 결과 반영)
+    const badge = document.getElementById('engineBadge');
+    const engineMap = {
+      'google_vision': ['Google Vision', 'engine-badge google'],
+      'gemini_vision': ['Gemini Vision', 'engine-badge gemini'],
+      'gpt_vision':    ['GPT-4o Vision', 'engine-badge gpt'],
+      'clova':         ['Naver Clova',   'engine-badge clova'],
+      'none':          ['인식 불가',     'engine-badge unknown'],
+    };
+    const [label, cls] = engineMap[data.ocr_engine] || ['Unknown', 'engine-badge unknown'];
+    badge.textContent = label;
+    badge.className = cls;
+
+    // 영수증 정보 카드
+    document.getElementById('riMerchant').textContent = data.merchant_name || '-';
+    document.getElementById('riLocation').textContent = data.payment_location || '-';
+    document.getElementById('riDate').textContent = data.payment_date || '-';
+    const items = data.item_results || [];
+    const totalAmt = data.total_amount_krw
+      || items.reduce((s, i) => s + (i.amount_krw || 0), 0)
+      || 0;
+    document.getElementById('riTotal').textContent = totalAmt ? totalAmt.toLocaleString() + '원' : '-';
+    document.getElementById('receiptInfo').style.display = 'block';
+    document.getElementById('infoCard').style.display = 'none';
+
+    const totalCarbon = data.total_carbon_kg ?? data.merchant_carbon_kg ?? 0;
+
+    // 요약
+    document.getElementById('statItems').textContent = items.length || (data.merchant_category ? 1 : 0);
+    document.getElementById('statCarbon').textContent = totalCarbon != null ? totalCarbon.toFixed(4) : '-';
+    const cPerKrw = totalAmt > 0 && totalCarbon != null
+      ? ((totalCarbon / totalAmt) * 1000).toFixed(4) : '-';
+    document.getElementById('statCarbonPerKrw').textContent = cPerKrw;
+    document.getElementById('summaryRow').classList.add('visible');
+
+    const categoryCarbon = {};
+
+    if (items.length > 0) {
+      const tbody = document.getElementById('itemTableBody');
+      tbody.innerHTML = '';
+      items.forEach(item => {
+        const stage = item.category?.classify_stage ?? '-';
+        const catName = item.category?.category_name ?? '-';
+        const carbon = item.carbon_kg != null ? item.carbon_kg.toFixed(4) : '-';
+        if (item.carbon_kg != null) categoryCarbon[catName] = (categoryCarbon[catName] || 0) + item.carbon_kg;
+        const bc = stage <= 1 ? 'b1' : stage == 2 ? 'b2' : stage == 3 ? 'b3' : 'b4';
+        const bl = stage == 1 ? 'DB직결' : stage == 2 ? 'SBERT' : stage == 3 ? 'Gemini' : '미분류';
+        tbody.innerHTML += `<tr>
+          <td>${item.item_name}</td>
+          <td>${(item.amount_krw||0).toLocaleString()}원</td>
+          <td>${catName}</td>
+          <td><span class="badge ${bc}">${bl}</span></td>
+          <td>${carbon}</td>
+        </tr>`;
+      });
+    } else if (data.merchant_category) {
+      const s = data.merchant_category.classify_stage ?? '-';
+      const bc = s <= 1 ? 'b1' : s == 2 ? 'b2' : s == 3 ? 'b3' : 'b4';
+      const bl = s == 1 ? 'DB직결' : s == 2 ? 'SBERT' : s == 3 ? 'Gemini' : '미분류';
+      document.getElementById('itemTableBody').innerHTML = `<tr>
+        <td colspan="2">${data.merchant_name} (가맹점 기반)</td>
+        <td>${data.merchant_category.category_name}</td>
+        <td><span class="badge ${bc}">${bl}</span></td>
+        <td>${data.merchant_carbon_kg != null ? data.merchant_carbon_kg.toFixed(4) : '-'}</td>
+      </tr>`;
+      categoryCarbon[data.merchant_category.category_name] = data.merchant_carbon_kg || 0;
+    }
+
+    renderPie(categoryCarbon);
+    document.getElementById('resultGrid').classList.add('visible');
+
+    // 피드백 챗 초기화
+    initChat(data);
+
+    // ── 디버그 패널 (OCR 원본 텍스트) ──────────────────────────────────────
+    if (data.ocr_raw_text) {
+      document.getElementById('rawPanelTitle').innerHTML =
+        `OCR 원본 텍스트 <span style="font-size:0.75rem;color:#888;font-weight:400">(${badge.textContent} · 파싱 디버깅용)</span>`;
+      document.getElementById('rawTextContent').innerHTML =
+        escapeHtml(data.ocr_raw_text);
+      document.getElementById('rawTextCard').style.display = 'block';
+    }
+  }
+
+  // ── JSON 문법 강조 ─────────────────────────────────────────────────────────
+  function syntaxHighlightJson(json) {
+    return json
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/("(\\u[a-fA-F0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
+        match => {
+          let cls = 'json-num';
+          if (/^"/.test(match)) {
+            cls = /:$/.test(match) ? 'json-key' : 'json-str';
+          } else if (/true|false/.test(match)) {
+            cls = 'json-bool';
+          } else if (/null/.test(match)) {
+            cls = 'json-null';
+          }
+          return `<span class="${cls}">${match}</span>`;
+        }
+      );
+  }
+
+  function escapeHtml(text) {
+    return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // ── 파이 차트 ──────────────────────────────────────────────────────────────
+  function renderPie(catCarbon) {
+    const labels = Object.keys(catCarbon);
+    const vals = Object.values(catCarbon);
+    const colors = ['#4caf50','#2196f3','#ff9800','#e91e63','#9c27b0',
+                    '#00bcd4','#8bc34a','#ff5722','#607d8b','#795548'];
+    if (pieChart) pieChart.destroy();
+    pieChart = new Chart(document.getElementById('pieChart').getContext('2d'), {
+      type: 'pie',
+      data: {
+        labels,
+        datasets: [{ data: vals, backgroundColor: colors.slice(0, labels.length), borderWidth: 2, borderColor: '#fff' }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'bottom', labels: { font: { size: 11 }, padding: 10 } },
+          tooltip: { callbacks: { label: ctx => {
+            const total = ctx.dataset.data.reduce((a,b)=>a+b,0);
+            return ` ${ctx.label}: ${ctx.parsed.toFixed(4)} kg (${((ctx.parsed/total)*100).toFixed(1)}%)`;
+          }}}
+        }
+      }
+    });
+  }
+
+  // ── 유틸 ──────────────────────────────────────────────────────────────────
+  function setLoading(on) {
+    document.getElementById('submitBtn').disabled = on;
+    document.getElementById('btnText').style.display = on ? 'none' : 'inline';
+    document.getElementById('spinner').style.display = on ? 'block' : 'none';
+  }
+  function showError(msg) { const b = document.getElementById('errorBox'); b.textContent = msg; b.classList.add('visible'); }
+  function hideError() { document.getElementById('errorBox').classList.remove('visible'); }
+
+  // raw 패널 토글
+  document.getElementById('rawToggle').addEventListener('click', () => {
+    const box = document.getElementById('rawTextBox');
+    const tog = document.getElementById('rawToggle');
+    box.classList.toggle('open');
+    tog.textContent = box.classList.contains('open') ? '▾ 접기' : '▸ 펼쳐서 보기';
+  });
+
+  // 복사 버튼 (Google: plain text / Clova: JSON 텍스트)
+  document.getElementById('copyBtn').addEventListener('click', () => {
+    const el = document.getElementById('rawTextContent');
+    const text = el.innerText || el.textContent;
+    navigator.clipboard.writeText(text).then(() => {
+      const btn = document.getElementById('copyBtn');
+      btn.textContent = '✓ 복사됨';
+      setTimeout(() => { btn.textContent = '복사'; }, 1500);
+    });
+  });
+
+  // ── 피드백 챗 ─────────────────────────────────────────────────────────────
+  let consumptionSummary = {};
+
+  function initChat(data) {
+    // OCR 결과에서 카테고리별 금액 집계
+    const summary = {};
+    const items = data.item_results || [];
+    if (items.length > 0) {
+      items.forEach(item => {
+        const cat = item.category?.category_name || '기타';
+        summary[cat] = (summary[cat] || 0) + (item.amount_krw || 0);
+      });
+    } else if (data.merchant_category) {
+      const cat = data.merchant_category.category_name || '기타';
+      const totalAmt = data.total_amount_krw || 0;
+      summary[cat] = totalAmt;
+    }
+
+    consumptionSummary = summary;
+
+    const tag = document.getElementById('chatSummaryTag');
+    const entries = Object.entries(summary);
+    if (entries.length > 0) {
+      tag.textContent = '📊 분석 데이터: ' + entries.map(([k,v]) => `${k} ${v.toLocaleString()}원`).join(' · ');
+    } else {
+      tag.textContent = '📊 분석 데이터: 영수증 결과 기반';
+    }
+
+    document.getElementById('chatMessages').innerHTML = '';
+    appendBubble('ai', '안녕하세요! 이번 영수증의 소비 패턴을 분석했습니다. 탄소 절감 방법이나 친환경 소비에 대해 궁금한 점을 물어보세요 🌿');
+    document.getElementById('chatSection').classList.add('visible');
+  }
+
+  function appendBubble(role, text) {
+    const div = document.createElement('div');
+    div.className = `chat-bubble ${role}`;
+    div.textContent = text;
+    const msgs = document.getElementById('chatMessages');
+    msgs.appendChild(div);
+    msgs.scrollTop = msgs.scrollHeight;
+    return div;
+  }
+
+  async function sendChat() {
+    const input = document.getElementById('chatInput');
+    const msg = input.value.trim();
+    if (!msg) return;
+
+    const btn = document.getElementById('chatSendBtn');
+    input.value = '';
+    btn.disabled = true;
+
+    appendBubble('user', msg);
+
+    const typing = appendBubble('typing', '답변을 생성하는 중...');
+
+    try {
+      const res = await fetch(`${API_BASE}/feedback/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: null,
+          message: msg,
+          consumption_summary: consumptionSummary
+        })
+      });
+      const data = await res.json();
+      typing.remove();
+      if (!res.ok) {
+        appendBubble('ai', '오류가 발생했습니다: ' + (data.detail || res.status));
+      } else {
+        let msg = data.feedback || '';
+        try {
+          const parsed = JSON.parse(msg);
+          msg = parsed.answer || parsed.feedback || msg;
+        } catch (e) {}
+        appendBubble('ai', msg || JSON.stringify(data));
+      }
+    } catch (err) {
+      typing.remove();
+      appendBubble('ai', '서버 연결 오류: ' + err.message);
+    } finally {
+      btn.disabled = false;
+      input.focus();
+    }
+  }
+
+  document.getElementById('chatSendBtn').addEventListener('click', sendChat);
+  document.getElementById('chatInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
+  });
+</script>
+</body>
+</html>

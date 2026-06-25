@@ -10,3 +10,4 @@ def calculate_carbon(co2eq_KRW: float | None, amount_krw: float) -> float | None
 
     # 서비스 레이어에서 반올림 원천 적용: DB 누적 통계의 소수점 오차 방지
     return round(co2eq_KRW * amount_krw, CARBON_ROUND_DIGITS)
+

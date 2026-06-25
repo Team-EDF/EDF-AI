@@ -6,9 +6,15 @@ __pycache__/
 venv/
 *.egg-info/
 
-# 환경변수 / 인증키
+# 환경변수
 .env
 credentials/
+
+# 디버그 파일
+debug_*.py
+
+# RAG 벡터 DB
+chroma_db/
 
 # 대용량 데이터 파일
 data/IOT_2020_ixi.zip
@@ -21,10 +27,12 @@ data/SBO/
 .idea/
 .vscode/
 
-# Claude Code 로컬 설정
+# Claude Code 로컬 설정 (개인 설정, 커밋 제외)
 .claude/settings.local.json
 .claude/
 
 # 기타
 *.log
+
+# SBERT 모델
 app/services/greenstep_sbert_v2/

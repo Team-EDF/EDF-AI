@@ -51,6 +51,6 @@ def search_rag(query: str, k: int = 1):
     }
 
 
-def get_rag_context(query: str, k: int = 3) -> str:
+def get_rag_context(query: str, k: int = 1) -> str:
     result = search_rag(query, k)
     return result["context"]
