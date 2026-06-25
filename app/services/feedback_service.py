@@ -16,13 +16,20 @@ def generate_feedback(user_message: str, consumption_summary: dict):
     카테고리별 탄소배출량: {consumption_summary.get("category_summary")}
     소비 품목: {consumption_summary.get("items")}
     """
-
     try:
+        print("[RAG 검색] 시작")
+
         rag_result = search_rag(query)
         rag_context = rag_result["context"]
         rag_sources = rag_result["sources"]
+
+        print("====== RAG 검색 결과 ======")
+        print(rag_context[:500])
+        print("=========================")
+        print(f"[RAG 검색] source 개수: {len(rag_sources)}")
+
     except Exception as e:
-        print("RAG Error:", repr(e))
+        print("[RAG 오류]", repr(e))
         rag_context = "RAG 참고자료를 불러오지 못했습니다."
         rag_sources = []
 
@@ -58,12 +65,15 @@ def generate_feedback(user_message: str, consumption_summary: dict):
 
 답변:
 """
-
     try:
+        print("[Gemini 호출] feedback 생성 시작")
+
         response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt
         )
+
+        print("[Gemini 호출] feedback 생성 완료")
 
         return {
             "answer": response.text,
@@ -71,7 +81,7 @@ def generate_feedback(user_message: str, consumption_summary: dict):
         }
 
     except Exception as e:
-        print("Gemini Error:", repr(e))
+        print("[Gemini 오류]", repr(e))
 
         fallback_answer = make_rule_based_feedback(
             total_carbon_kg=total_carbon_kg,
@@ -104,7 +114,7 @@ def make_rule_based_feedback(total_carbon_kg, category_carbon_summary, items):
         feedback += (
             "식품 소비에서는 필요한 만큼만 구매하고 음식물 쓰레기를 줄이는 것이 중요합니다. "
             "또한 육류 중심 식단을 일부 식물성 식품으로 대체하는 방식도 탄소 절감에 도움이 될 수 있습니다."
-        )
+        )   
     elif "카페" in top_category or "음료" in top_category:
         feedback += (
             "카페/음료 소비에서는 텀블러나 다회용컵을 사용하고, 일회용 컵 사용을 줄이는 습관을 추천합니다."

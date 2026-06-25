@@ -11,7 +11,7 @@ def get_embeddings():
     )
 
 
-def search_rag(query: str, k: int = 3):
+def search_rag(query: str, k: int = 1):
     embeddings = get_embeddings()
 
     vectorstore = Chroma(

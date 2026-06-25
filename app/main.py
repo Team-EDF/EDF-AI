@@ -49,17 +49,24 @@ async def ocr(
     file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
+    print("[OCR] 1. 요청 수신")
+
     image_bytes = await file.read()
+    print("[OCR] 2. 이미지 읽기 완료")
 
     text = extract_text_from_image(image_bytes)
+    print("[OCR] 3. Google Vision OCR 완료")
 
     saved_ocr = save_ocr_result(
         db=db,
         filename=file.filename,
         raw_text=text
     )
+    print("[OCR] 4. OCR 원문 DB 저장 완료")
 
     parsed_result = parse_receipt_text(text)
+    print("[OCR] 5. 영수증 파싱 완료")
+    print("[OCR] parsed_result:", parsed_result)
 
     saved_consumptions = save_consumption_records(
         db=db,
@@ -67,6 +74,8 @@ async def ocr(
         parsed_result=parsed_result,
         ocr_id=saved_ocr.id
     )
+    print("[OCR] 6. 소비기록 DB 저장 완료")
+    print("[OCR] saved_consumption_count:", len(saved_consumptions))
 
     return {
         "ocr_id": saved_ocr.id,
@@ -77,7 +86,6 @@ async def ocr(
         "saved_consumption_count": len(saved_consumptions),
         "created_at": saved_ocr.created_at
     }
-
 
 @app.post("/parse-test")
 def parse_test(raw_text: str):
