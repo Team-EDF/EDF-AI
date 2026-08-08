@@ -23,6 +23,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# 외부 공식 API : POST /api/ocr/classify(사진 업로드) + POST /feedback/chat(채팅) 2개
+# merchant.router/ocr.router 안의 나머지 엔드포인트(/api/classify, /api/ocr/clova/classify 등등)는
+# 내부 테스트/디버깅 전용이며 백엔드/프론트가 호출할 계약 대상이 아님.
 app.include_router(merchant.router, prefix="/api", tags=["classify"])
 app.include_router(ocr.router, prefix="/api", tags=["ocr"])
 

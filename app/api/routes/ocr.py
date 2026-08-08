@@ -1,3 +1,5 @@
+import logging
+logger = logging.getLogger(__name__)
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends
 from typing import Optional
 from app.api.schemas.merchant import (
@@ -22,6 +24,7 @@ record_service = RecordService()
 @router.post("/ocr/classify", response_model=ClassifyResponse)
 async def ocr_classify(
     image: UploadFile = File(..., description="영수증 이미지 파일"),
+    user_id: Optional[int] = Form(default=None, description="백엔드가 JWT 인증 후 전달하는 사용자 ID"),
     # 아래 3개는 OCR 추출값이 없을 때 쓰는 override 필드 (선택)
     merchant_name_override: Optional[str] = Form(default=None, description="가맹점명 직접 입력 (OCR 추출 실패 시 사용)"),
     payment_location_override: Optional[str] = Form(default=None, description="결제 위치 직접 입력"),
@@ -117,16 +120,19 @@ async def ocr_classify(
     )
 
     try:
-        record_id = record_service.save_receipt(request, response, conn=conn)
+        record_id = record_service.save_receipt(request, response, user_id=user_id, conn=conn)
         response.record_id = record_id
     except Exception:
-        pass
+        logger.exception("DB 저장 실패: merchant=%s, user_id=%s", merchant_name, user_id)
 
     return response
 
+# 테스트 전용, api/ocr/classify(사진 업로드) + /feedback/chat(채팅) 2개로 정함
+# 이 엔드포인트의 경우 Clova OCR 동작이 잘 되는 개발중 확인하기 위한 용도로 사용
 @router.post("/ocr/clova/classify", response_model=ClassifyResponse)
 async def ocr_clova_classify(
     image: UploadFile = File(..., description="영수증 이미지 파일"),
+    user_id: Optional[int] = Form(default=None, description="백엔드가 JWT 인증 후 전달하는 사용자 ID"),
     merchant_name_override: Optional[str] = Form(default=None, description="가맹점명 직접 입력 (OCR 추출 실패 시 사용)"),
     payment_location_override: Optional[str] = Form(default=None, description="결제 위치 직접 입력"),
     payment_date_override: Optional[str] = Form(default=None, description="결제 일자 직접 입력 (YYYY-MM-DD)"),
@@ -205,9 +211,9 @@ async def ocr_clova_classify(
     )
 
     try:
-        record_id = record_service.save_receipt(request, response, conn=conn)
+        record_id = record_service.save_receipt(request, response, user_id=user_id, conn=conn)
         response.record_id = record_id
     except Exception:
-        pass
+        logger.exception("DB 저장 실패(CLOVA): merchant=%s, user_id=%s", merchant_name, user_id)
 
     return response
