@@ -1,31 +1,34 @@
-from dotenv import load_dotenv
-
-from langchain_chroma import Chroma
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
-
-load_dotenv()
-
-CHROMA_DIR = "chroma_db"
+from app.services.rag_service import (
+    search_rag,
+)
 
 
-def retrieve_eco_documents(query: str, k: int = 3) -> str:
-    embeddings = GoogleGenerativeAIEmbeddings(
-        model="models/gemini-embedding-001"
-    )
+def retrieve_eco_documents(
+    query: str,
+    k: int = 3,
+) -> dict:
+    """
+    친환경 피드백에 사용할 RAG 문서를 검색한다.
 
-    vector_store = Chroma(
-        persist_directory=CHROMA_DIR,
-        embedding_function=embeddings
-    )
+    실제 Chroma 접근 및 embedding 처리는
+    rag_service.py가 담당한다.
 
-    docs = vector_store.similarity_search(query, k=k)
+    반환:
+    {
+        "query_category": str | None,
+        "context": str,
+        "sources": list
+    }
+    """
 
-    if not docs:
-        return ""
+    if not query or not query.strip():
+        return {
+            "query_category": None,
+            "context": "",
+            "sources": [],
+        }
 
-    return "\n\n".join(
-        [
-            f"[출처: {doc.metadata.get('source')}]\n{doc.page_content}"
-            for doc in docs
-        ]
+    return search_rag(
+        query=query,
+        k=k,
     )

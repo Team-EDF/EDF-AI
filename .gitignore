@@ -36,3 +36,9 @@ data/SBO/
 
 # SBERT 모델
 app/services/greenstep_sbert_v2/
+
+*.backup
+docker-compose.local.yml
+
+# RAG 원본 문서 - Discord로 별도 공유
+data/rag_documents/**/*.pdf
