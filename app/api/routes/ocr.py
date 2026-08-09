@@ -14,6 +14,7 @@ from app.services.clova_ocr_service import extract_receipt_from_clova
 from app.services.classifier import MerchantClassifier
 from app.services.carbon import calculate_carbon, CARBON_ROUND_DIGITS
 from app.services.record_service import RecordService
+from app.services.image_storage_service import save_receipt_image
 from app.database.connection import get_db
 
 router = APIRouter()
@@ -41,6 +42,12 @@ async def ocr_classify(
     image_bytes = await image.read()
     if not image_bytes:
         raise HTTPException(status_code=400, detail="이미지 파일이 비어있습니다")
+
+    image_url = None
+    try:
+        image_url = save_receipt_image(image_bytes, image.filename or "receipt.jpg")
+    except Exception:
+        logger.exception("영수증 이미지 저장 실패 (분류는 계속 진행)")
 
     try:
         parsed = extract_receipt_with_fallback(image_bytes)
@@ -117,10 +124,11 @@ async def ocr_classify(
         total_carbon_kg=total_carbon_kg,
         ocr_raw_text=raw_text or None,
         ocr_engine=parsed.get("ocr_engine"),
+        image_url=image_url,
     )
 
     try:
-        record_id = record_service.save_receipt(request, response, user_id=user_id, conn=conn)
+        record_id = record_service.save_receipt(request, response, user_id=user_id, image_url=image_url, conn=conn)
         response.record_id = record_id
     except Exception:
         logger.exception("DB 저장 실패: merchant=%s, user_id=%s", merchant_name, user_id)

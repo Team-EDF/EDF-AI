@@ -30,3 +30,4 @@ data/SBO/
 *.log
 app/services/greenstep_sbert_v2/
 .claude/
+uploads/

@@ -14,3 +14,4 @@ langchain-google-genai>=4.2.2
 sentence-transformers
 pgvector
 openai
+boto3>=1.34.0

@@ -57,3 +57,4 @@ class ClassifyResponse(BaseModel):
     record_id: Optional[int] = None              # DB 저장 후 부여되는 consumption_records PK
     ocr_raw_text: Optional[str] = None           # OCR 엔드포인트 전용: Vision API 원본 텍스트
     ocr_engine: Optional[str] = None             # OCR 엔드포인트 전용: 실제 사용된 엔진명 (google_vision/gemini_vision/gpt_vision/clova)
+    image_url: Optional[str] = None              # 영수증 원본 이미지 저장 경로/URL (저장 실패 시 None)

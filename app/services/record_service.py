@@ -10,6 +10,7 @@ class RecordService:
         request: ClassifyRequest,
         response: ClassifyResponse,
         user_id: int | None = None,
+        image_url: str | None = None,
         conn=None,
     ) -> int:
         """
@@ -45,8 +46,8 @@ class RecordService:
                     """
                     INSERT INTO consumption_records
                         (user_id, merchant_name, payment_location, source_type,
-                         record_date, total_amount, total_carbon_kg)
-                    VALUES (%s, %s, %s, 'receipt', %s, %s, %s)
+                         record_date, total_amount, total_carbon_kg, image_url)
+                    VALUES (%s, %s, %s, 'receipt', %s, %s, %s, %s)
                     RETURNING record_id
                     """,
                     (
@@ -56,6 +57,7 @@ class RecordService:
                         record_date,
                         total_amount,
                         response.total_carbon_kg or response.merchant_carbon_kg,
+                        image_url,
                     ),
                 )
                 record_id: int = cur.fetchone()[0]
