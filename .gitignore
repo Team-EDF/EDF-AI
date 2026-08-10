@@ -31,3 +31,10 @@ data/SBO/
 app/services/greenstep_sbert_v2/
 .claude/
 uploads/
+
+*.backup
+docker-compose.local.yml
+
+#RAG 원본 문서 - Discor로 별도 공유
+
+data/rag_documents/**/*.pdf
