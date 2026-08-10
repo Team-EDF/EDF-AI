@@ -1,7 +1,9 @@
 import logging
 logger = logging.getLogger(__name__)
 from datetime import date
+
 from fastapi import APIRouter, HTTPException, Query, Depends
+
 from app.api.schemas.merchant import (
     ClassifyRequest,
     ClassifyResponse,
@@ -23,8 +25,6 @@ record_service = RecordService()
 @router.post("/classify", response_model=ClassifyResponse)
 def classify_receipt(
     request: ClassifyRequest,
-    # DI: 요청 진입점에서 커넥션을 한 번만 열고 classifier/record_service에 전달해
-    # 하나의 요청 안에서 반복되는 DB 연결 오버헤드를 제거한다
     conn=Depends(get_db),
 ):
     """
@@ -42,29 +42,41 @@ def classify_receipt(
     total_carbon_kg = None
 
     if request.items:
-        # 세부 품목 있음 → 품목별 분류 + 탄소 계산 (conn 공유로 DB 연결 1회)
         item_results = []
+
         for item in request.items:
             result = classifier.classify_from_item(item.item_name, conn=conn)
             category = CategoryResult(**result)
             carbon_kg = calculate_carbon(category.co2eq_KRW, item.amount_krw)
-            item_results.append(ItemResult(
-                item_name=item.item_name,
-                amount_krw=item.amount_krw,
-                category=category,
-                carbon_kg=carbon_kg,
-            ))
 
-        carbon_values = [r.carbon_kg for r in item_results if r.carbon_kg is not None]
-        total_carbon_kg = round(sum(carbon_values), CARBON_ROUND_DIGITS) if carbon_values else None
+            item_results.append(
+                ItemResult(
+                    item_name=item.item_name,
+                    amount_krw=item.amount_krw,
+                    category=category,
+                    carbon_kg=carbon_kg,
+                )
+            )
+
+        carbon_values = [
+            result.carbon_kg
+            for result in item_results
+            if result.carbon_kg is not None
+        ]
+
+        total_carbon_kg = (
+            round(sum(carbon_values), CARBON_ROUND_DIGITS)
+            if carbon_values
+            else None
+        )
 
     else:
-        # 세부 품목 없음 → 가맹점명 기반 분류 + 총액 기반 탄소 계산
         result = classifier.classify_from_merchant(
             request.merchant_name,
             request.payment_location,
             conn=conn,
         )
+
         merchant_category = CategoryResult(**result)
         merchant_carbon_kg = calculate_carbon(
             merchant_category.co2eq_KRW,
@@ -86,6 +98,7 @@ def classify_receipt(
         response.record_id = record_id
     except Exception:
         logger.exception("DB 저장 실패: merchant=%s", request.merchant_name)
+
     return response
 
 
@@ -100,5 +113,15 @@ def get_category_stats(
     카테고리별 탄소배출량 + 소비금액 집계.
     차트 시각화용 데이터 반환.
     """
-    stats = record_service.get_category_stats(user_id, period_type, period_start, conn=conn)
-    return {"period_type": period_type, "period_start": str(period_start or date.today().replace(day=1)), "categories": stats}
+    stats = record_service.get_category_stats(
+        user_id,
+        period_type,
+        period_start,
+        conn=conn,
+    )
+
+    return {
+        "period_type": period_type,
+        "period_start": str(period_start or date.today().replace(day=1)),
+        "categories": stats,
+    }

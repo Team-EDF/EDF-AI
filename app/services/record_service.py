@@ -1,10 +1,46 @@
 from __future__ import annotations
-from datetime import date, timedelta
+
+from datetime import date, datetime, timedelta
+from typing import Any
+
+from app.api.schemas.merchant import (
+    ClassifyRequest,
+    ClassifyResponse,
+)
 from app.database.connection import get_db_connection
-from app.api.schemas.merchant import ClassifyRequest, ClassifyResponse
 
 
 class RecordService:
+    @staticmethod
+    def _normalize_record_date(value: Any) -> date:
+        """
+        결제 일자를 DB에 저장 가능한 date 객체로 정규화한다.
+
+        지원 형식:
+        - None: 오늘 날짜
+        - datetime: 날짜 부분만 사용
+        - date: 그대로 사용
+        - str: YYYY-MM-DD 형식으로 변환
+
+        잘못된 문자열이나 지원하지 않는 타입이면 오늘 날짜를 사용한다.
+        """
+        if value is None:
+            return date.today()
+
+        if isinstance(value, datetime):
+            return value.date()
+
+        if isinstance(value, date):
+            return value
+
+        if isinstance(value, str):
+            try:
+                return date.fromisoformat(value)
+            except ValueError:
+                return date.today()
+
+        return date.today()
+
     def save_receipt(
         self,
         request: ClassifyRequest,
@@ -14,41 +50,60 @@ class RecordService:
         conn=None,
     ) -> int:
         """
-        분류 결과를 DB에 저장.
-        1) consumption_records 1행 INSERT
-        2) items N행 INSERT
-        3) periodic_stats (DAILY/WEEKLY/MONTHLY) UPSERT
-        4) category_stats (메인 카테고리별) UPSERT
-        반환값: record_id
+        OCR 분류 결과를 DB에 저장한다.
+
+        처리 순서:
+        1. consumption_records에 영수증 전체 정보 저장
+        2. items에 품목별 분류 결과 저장
+        3. periodic_stats에 일간·주간·월간 통계 누적
+        4. category_stats에 대분류별 통계 누적
+
+        반환값:
+            생성된 consumption_records.record_id
         """
-        record_date = None
-        if request.payment_date:
-            try:
-                record_date = date.fromisoformat(request.payment_date)
-            except ValueError:
-                pass
-        record_date = record_date or date.today()
+        record_date = self._normalize_record_date(
+            request.payment_date
+        )
 
         total_amount = (
-            sum(i.amount_krw for i in request.items)
+            sum(item.amount_krw for item in request.items)
             if request.items
             else (request.total_amount_krw or 0)
         )
 
-        # conn=None 이면 자체 연결 (단독 호출 시 하위 호환성 유지)
         own_conn = conn is None
+
         if own_conn:
             conn = get_db_connection()
+
         try:
             with conn.cursor() as cur:
-                # 1) consumption_records
+                # 1. 영수증 전체 소비 기록 저장
                 cur.execute(
                     """
                     INSERT INTO consumption_records
-                        (user_id, merchant_name, payment_location, source_type,
-                         record_date, total_amount, total_carbon_kg, image_url)
-                    VALUES (%s, %s, %s, 'receipt', %s, %s, %s, %s)
-                    RETURNING record_id
+                        (
+                            user_id,
+                            merchant_name,
+                            payment_location,
+                            source_type,
+                            record_date,
+                            total_amount,
+                            total_carbon_kg,
+                            image_url
+                        )
+                    VALUES
+                        (
+                            %s,
+                            %s,
+                            %s,
+                            'receipt',
+                            %s,
+                            %s,
+                            %s,
+                            %s
+                        )
+                    RETURNING record_id;
                     """,
                     (
                         user_id,
@@ -56,60 +111,157 @@ class RecordService:
                         request.payment_location,
                         record_date,
                         total_amount,
-                        response.total_carbon_kg or response.merchant_carbon_kg,
+                        (
+                            response.total_carbon_kg
+                            if response.total_carbon_kg is not None
+                            else response.merchant_carbon_kg
+                        ),
                         image_url,
                     ),
                 )
-                record_id: int = cur.fetchone()[0]
 
-                # 2) items
+                inserted = cur.fetchone()
+
+                if not inserted:
+                    raise RuntimeError(
+                        "consumption_records 저장 후 "
+                        "record_id를 반환받지 못했습니다."
+                    )
+
+                record_id: int = inserted[0]
+
+                # 2. 품목별 분류 결과 저장
                 if response.item_results:
                     for item in response.item_results:
-                        cat = item.category
+                        category = item.category
+
+                        main_category_id = (
+                            category.main_category_id
+                            if category
+                            else None
+                        )
+
+                        middle_category_id = (
+                            category.middle_category_id
+                            if category
+                            else None
+                        )
+
+                        classify_stage = (
+                            category.classify_stage
+                            if category
+                            else None
+                        )
+
                         cur.execute(
                             """
                             INSERT INTO items
-                                (record_id, main_category_id, middle_category_id,
-                                 source_type, source_msg, amount,
-                                 classify_stage, carbon_kg)
-                            VALUES (%s, %s, %s, 'item', %s, %s, %s, %s)
+                                (
+                                    record_id,
+                                    main_category_id,
+                                    middle_category_id,
+                                    source_type,
+                                    source_msg,
+                                    amount,
+                                    classify_stage,
+                                    carbon_kg
+                                )
+                            VALUES
+                                (
+                                    %s,
+                                    %s,
+                                    %s,
+                                    'item',
+                                    %s,
+                                    %s,
+                                    %s,
+                                    %s
+                                );
                             """,
                             (
                                 record_id,
-                                cat.category_id if (cat and cat.category_type == "main") else None,
-                                cat.category_id if (cat and cat.category_type == "middle") else None,
+                                main_category_id,
+                                middle_category_id,
                                 item.item_name,
                                 item.amount_krw,
-                                cat.classify_stage if cat else None,
+                                classify_stage,
                                 item.carbon_kg,
                             ),
                         )
+
+                # 품목이 없으면 가맹점 분류 결과를 하나의 item으로 저장
                 else:
-                    cat = response.merchant_category
+                    category = response.merchant_category
+
+                    main_category_id = (
+                        category.main_category_id
+                        if category
+                        else None
+                    )
+
+                    middle_category_id = (
+                        category.middle_category_id
+                        if category
+                        else None
+                    )
+
+                    classify_stage = (
+                        category.classify_stage
+                        if category
+                        else None
+                    )
+
                     cur.execute(
                         """
                         INSERT INTO items
-                            (record_id, main_category_id, middle_category_id,
-                             source_type, source_msg, amount,
-                             classify_stage, carbon_kg)
-                        VALUES (%s, %s, %s, 'merchant', %s, %s, %s, %s)
+                            (
+                                record_id,
+                                main_category_id,
+                                middle_category_id,
+                                source_type,
+                                source_msg,
+                                amount,
+                                classify_stage,
+                                carbon_kg
+                            )
+                        VALUES
+                            (
+                                %s,
+                                %s,
+                                %s,
+                                'merchant',
+                                %s,
+                                %s,
+                                %s,
+                                %s
+                            );
                         """,
                         (
                             record_id,
-                            cat.category_id if (cat and cat.category_type == "main") else None,
-                            None,
+                            main_category_id,
+                            middle_category_id,
                             request.merchant_name,
                             total_amount,
-                            cat.classify_stage if cat else None,
+                            classify_stage,
                             response.merchant_carbon_kg,
                         ),
                     )
 
-                # 3+4) 메인 카테고리별 집계 → periodic_stats + category_stats 누적
-                self._update_stats(cur, record_id, record_date, user_id)
+                # 3~4. 기간별 및 카테고리별 통계 갱신
+                self._update_stats(
+                    cur=cur,
+                    record_id=record_id,
+                    record_date=record_date,
+                    user_id=user_id,
+                )
 
             conn.commit()
             return record_id
+
+        except Exception:
+            conn.rollback()
+            raise
+
         finally:
             if own_conn:
                 conn.close()
@@ -122,113 +274,261 @@ class RecordService:
         user_id: int | None,
     ) -> None:
         """
-        방금 저장된 record_id의 items를 메인 카테고리 단위로 집계해
-        periodic_stats(DAILY/WEEKLY/MONTHLY) 와 category_stats를 누적 UPSERT.
-
-        category_stats는 periodic_stats와 독립된 테이블로,
-        (user_id, period_type, period_start, main_category_id) 를 UPSERT 키로 사용한다.
-        새 카테고리 조합 → INSERT / 기존 조합 → carbon + spending 누적 UPDATE.
+        저장된 record_id의 품목을 대분류 단위로 집계한 뒤
+        periodic_stats와 category_stats에 누적한다.
         """
-        # items → middle_category → main_category 경로로 집계
         cur.execute(
             """
             SELECT
-                COALESCE(mc_main.main_category_id, i.main_category_id) AS main_cat_id,
-                COALESCE(mc_main.main_name, direct.main_name, '미분류') AS main_cat_name,
-                COALESCE(SUM(i.carbon_kg), 0) AS carbon,
-                COALESCE(SUM(i.amount),    0) AS spending
-            FROM items i
-            LEFT JOIN middle_category mc
-                   ON mc.middle_category_id = i.middle_category_id
+                COALESCE(
+                    mc_main.main_category_id,
+                    item.main_category_id
+                ) AS main_cat_id,
+
+                COALESCE(
+                    mc_main.main_name,
+                    direct_main.main_name,
+                    '미분류'
+                ) AS main_cat_name,
+
+                COALESCE(
+                    SUM(item.carbon_kg),
+                    0
+                ) AS carbon,
+
+                COALESCE(
+                    SUM(item.amount),
+                    0
+                ) AS spending
+
+            FROM items item
+
+            LEFT JOIN middle_category middle
+                ON middle.middle_category_id
+                 = item.middle_category_id
+
             LEFT JOIN main_category mc_main
-                   ON mc_main.main_category_id = mc.main_category_id
-            LEFT JOIN main_category direct
-                   ON direct.main_category_id = i.main_category_id
-            WHERE i.record_id = %s
+                ON mc_main.main_category_id
+                 = middle.main_category_id
+
+            LEFT JOIN main_category direct_main
+                ON direct_main.main_category_id
+                 = item.main_category_id
+
+            WHERE item.record_id = %s
+
             GROUP BY
-                COALESCE(mc_main.main_category_id, i.main_category_id),
-                COALESCE(mc_main.main_name, direct.main_name, '미분류')
+                COALESCE(
+                    mc_main.main_category_id,
+                    item.main_category_id
+                ),
+                COALESCE(
+                    mc_main.main_name,
+                    direct_main.main_name,
+                    '미분류'
+                );
             """,
             (record_id,),
         )
-        cat_rows = cur.fetchall()  # [(main_cat_id, main_cat_name, carbon, spending), ...]
 
-        total_carbon   = sum(r[2] for r in cat_rows)
-        total_spending = sum(r[3] for r in cat_rows)
+        category_rows = cur.fetchall()
+
+        total_carbon = sum(
+            row[2] for row in category_rows
+        )
+
+        total_spending = sum(
+            row[3] for row in category_rows
+        )
 
         periods = {
-            "DAILY":   record_date,
-            "WEEKLY":  record_date - timedelta(days=record_date.weekday()),  # 해당 주 월요일
+            "DAILY": record_date,
+            "WEEKLY": (
+                record_date
+                - timedelta(days=record_date.weekday())
+            ),
             "MONTHLY": record_date.replace(day=1),
         }
 
         for period_type, period_start in periods.items():
-            # ── periodic_stats UPSERT (기간 합산용) ───────────────────────────
-            if user_id is not None:
-                cur.execute(
-                    """
-                    SELECT stat_id FROM periodic_stats
-                    WHERE user_id = %s AND period_type = %s AND period_start = %s
-                    """,
-                    (user_id, period_type, period_start),
-                )
-            else:
-                cur.execute(
-                    """
-                    SELECT stat_id FROM periodic_stats
-                    WHERE user_id IS NULL AND period_type = %s AND period_start = %s
-                    """,
-                    (period_type, period_start),
-                )
+            self._upsert_periodic_stats(
+                cur=cur,
+                user_id=user_id,
+                period_type=period_type,
+                period_start=period_start,
+                total_carbon=total_carbon,
+                total_spending=total_spending,
+            )
 
-            row = cur.fetchone()
-            if row:
-                cur.execute(
-                    """
-                    UPDATE periodic_stats
-                    SET total_carbon   = total_carbon   + %s,
-                        total_spending = total_spending + %s
-                    WHERE stat_id = %s
-                    """,
-                    (total_carbon, total_spending, row[0]),
-                )
-            else:
-                cur.execute(
-                    """
-                    INSERT INTO periodic_stats
-                        (user_id, period_type, period_start, total_carbon, total_spending)
-                    VALUES (%s, %s, %s, %s, %s)
-                    """,
-                    (user_id, period_type, period_start, total_carbon, total_spending),
-                )
+            self._upsert_category_stats(
+                cur=cur,
+                user_id=user_id,
+                period_type=period_type,
+                period_start=period_start,
+                category_rows=category_rows,
+            )
 
-            # ── category_stats UPSERT (카테고리별 누적) ───────────────────────
-            # category_stats는 periodic_stats와 독립적으로 기간 정보를 직접 보유한다.
-            # UNIQUE 인덱스(uq_category_stats)가 걸려 있어 ON CONFLICT로 단순하게 처리.
-            for main_cat_id, main_cat_name, carbon, spending in cat_rows:
-                cur.execute(
-                    """
-                    INSERT INTO category_stats
-                        (user_id, period_type, period_start,
-                         main_category_id, category_name,
-                         category_carbon, category_spending)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (
+    def _upsert_periodic_stats(
+        self,
+        cur,
+        user_id: int | None,
+        period_type: str,
+        period_start: date,
+        total_carbon,
+        total_spending,
+    ) -> None:
+        """
+        periodic_stats에 기간별 총 탄소배출량과 총 지출액을 누적한다.
+        """
+        if user_id is not None:
+            cur.execute(
+                """
+                SELECT stat_id
+                FROM periodic_stats
+                WHERE user_id = %s
+                  AND period_type = %s
+                  AND period_start = %s
+                LIMIT 1;
+                """,
+                (
+                    user_id,
+                    period_type,
+                    period_start,
+                ),
+            )
+
+        else:
+            cur.execute(
+                """
+                SELECT stat_id
+                FROM periodic_stats
+                WHERE user_id IS NULL
+                  AND period_type = %s
+                  AND period_start = %s
+                LIMIT 1;
+                """,
+                (
+                    period_type,
+                    period_start,
+                ),
+            )
+
+        row = cur.fetchone()
+
+        if row:
+            cur.execute(
+                """
+                UPDATE periodic_stats
+                SET
+                    total_carbon
+                        = total_carbon + %s,
+                    total_spending
+                        = total_spending + %s
+                WHERE stat_id = %s;
+                """,
+                (
+                    total_carbon,
+                    total_spending,
+                    row[0],
+                ),
+            )
+
+        else:
+            cur.execute(
+                """
+                INSERT INTO periodic_stats
+                    (
+                        user_id,
+                        period_type,
+                        period_start,
+                        total_carbon,
+                        total_spending
+                    )
+                VALUES
+                    (
+                        %s,
+                        %s,
+                        %s,
+                        %s,
+                        %s
+                    );
+                """,
+                (
+                    user_id,
+                    period_type,
+                    period_start,
+                    total_carbon,
+                    total_spending,
+                ),
+            )
+
+    def _upsert_category_stats(
+        self,
+        cur,
+        user_id: int | None,
+        period_type: str,
+        period_start: date,
+        category_rows,
+    ) -> None:
+        """
+        category_stats에 기간별 대분류 탄소량과 지출액을 누적한다.
+        """
+        for (
+            main_category_id,
+            main_category_name,
+            carbon,
+            spending,
+        ) in category_rows:
+            cur.execute(
+                """
+                INSERT INTO category_stats
+                    (
+                        user_id,
+                        period_type,
+                        period_start,
+                        main_category_id,
+                        category_name,
+                        category_carbon,
+                        category_spending
+                    )
+                VALUES
+                    (
+                        %s,
+                        %s,
+                        %s,
+                        %s,
+                        %s,
+                        %s,
+                        %s
+                    )
+
+                ON CONFLICT
+                    (
                         COALESCE(user_id, -1),
                         period_type,
                         period_start,
                         COALESCE(main_category_id, -1)
                     )
-                    DO UPDATE SET
-                        category_carbon   = category_stats.category_carbon   + EXCLUDED.category_carbon,
-                        category_spending = category_stats.category_spending + EXCLUDED.category_spending
-                    """,
-                    (
-                        user_id, period_type, period_start,
-                        main_cat_id, main_cat_name,
-                        carbon, spending,
-                    ),
-                )
+
+                DO UPDATE SET
+                    category_carbon
+                        = category_stats.category_carbon
+                        + EXCLUDED.category_carbon,
+
+                    category_spending
+                        = category_stats.category_spending
+                        + EXCLUDED.category_spending;
+                """,
+                (
+                    user_id,
+                    period_type,
+                    period_start,
+                    main_category_id,
+                    main_category_name,
+                    carbon,
+                    spending,
+                ),
+            )
 
     def get_category_stats(
         self,
@@ -238,59 +538,92 @@ class RecordService:
         conn=None,
     ) -> list[dict]:
         """
-        category_stats 테이블에서 메인 카테고리별 집계 조회.
-        category_stats가 독립 테이블이므로 periodic_stats JOIN 없이 직접 조회.
-        percentage는 해당 기간 category_carbon 합계 대비 비율로 계산.
+        category_stats에서 대분류별 통계를 조회한다.
+
+        반환 항목:
+        - main_category_id
+        - category_name
+        - category_carbon
+        - category_spending
+        - percentage
         """
         if period_start is None:
             period_start = date.today().replace(day=1)
 
-        # user_id NULL 여부에 따라 조건 분기 (NULL = IS NULL 비교 필요)
         if user_id is not None:
-            user_filter = "cs.user_id = %(user_id)s"
+            user_filter = "stats.user_id = %(user_id)s"
         else:
-            user_filter = "cs.user_id IS NULL"
+            user_filter = "stats.user_id IS NULL"
 
-        # percentage: periodic_stats JOIN 없이 window 함수로 전체 합산 대비 비율 계산
         sql = f"""
-        SELECT
-            cs.main_category_id,
-            cs.category_name,
-            cs.category_carbon,
-            cs.category_spending,
-            CASE WHEN SUM(cs.category_carbon) OVER () > 0
-                 THEN ROUND((cs.category_carbon / SUM(cs.category_carbon) OVER () * 100)::NUMERIC, 2)
-                 ELSE 0
-            END AS percentage
-        FROM category_stats cs
-        WHERE {user_filter}
-          AND cs.period_type  = %(period_type)s
-          AND cs.period_start = %(period_start)s
-        ORDER BY cs.category_carbon DESC
+            SELECT
+                stats.main_category_id,
+                stats.category_name,
+                stats.category_carbon,
+                stats.category_spending,
+
+                CASE
+                    WHEN SUM(
+                        stats.category_carbon
+                    ) OVER () > 0
+                    THEN ROUND(
+                        (
+                            stats.category_carbon
+                            / SUM(
+                                stats.category_carbon
+                            ) OVER ()
+                            * 100
+                        )::NUMERIC,
+                        2
+                    )
+                    ELSE 0
+                END AS percentage
+
+            FROM category_stats stats
+
+            WHERE {user_filter}
+              AND stats.period_type
+                    = %(period_type)s
+              AND stats.period_start
+                    = %(period_start)s
+
+            ORDER BY
+                stats.category_carbon DESC;
         """
 
-        # conn=None 이면 자체 연결 (단독 호출 시 하위 호환성 유지)
         own_conn = conn is None
+
         if own_conn:
             conn = get_db_connection()
+
         try:
             with conn.cursor() as cur:
-                cur.execute(sql, {
-                    "user_id":      user_id,
-                    "period_type":  period_type,
-                    "period_start": period_start,
-                })
+                cur.execute(
+                    sql,
+                    {
+                        "user_id": user_id,
+                        "period_type": period_type,
+                        "period_start": period_start,
+                    },
+                )
+
                 rows = cur.fetchall()
+
                 return [
                     {
-                        "main_category_id":  r[0],
-                        "category_name":     r[1],
-                        "category_carbon":   r[2],
-                        "category_spending": r[3],
-                        "percentage":        float(r[4]) if r[4] is not None else 0.0,
+                        "main_category_id": row[0],
+                        "category_name": row[1],
+                        "category_carbon": row[2],
+                        "category_spending": row[3],
+                        "percentage": (
+                            float(row[4])
+                            if row[4] is not None
+                            else 0.0
+                        ),
                     }
-                    for r in rows
+                    for row in rows
                 ]
+
         finally:
             if own_conn:
                 conn.close()
