@@ -1,4 +1,7 @@
-import traceback
+import logging
+
+logger = logging.getLogger(__name__)
+
 from typing import Optional
 from datetime import date, datetime
 
@@ -25,6 +28,7 @@ from app.services.carbon import (
 )
 from app.services.classifier import MerchantClassifier
 from app.services.clova_ocr_service import extract_receipt_from_clova
+from app.services.image_storage_service import save_receipt_image
 from app.services.ocr_fallback_service import extract_receipt_with_fallback
 from app.services.record_service import RecordService
 
@@ -299,6 +303,7 @@ def _save_classification_result(
     request: ClassifyRequest,
     response: ClassifyResponse,
     conn,
+    user_id: Optional[int] = None,
 ) -> None:
     """
     분류 결과를 DB에 저장하고
@@ -313,27 +318,20 @@ def _save_classification_result(
             record_service.save_receipt(
                 request=request,
                 response=response,
+                user_id=user_id,
+                image_url=response.image_url,
                 conn=conn,
             )
         )
 
         response.record_id = record_id
 
-        print(
-            "[RecordService] "
-            f"저장 성공: record_id={record_id}"
+    except Exception:
+        logger.exception(
+            "DB 저장 실패: merchant=%s, user_id=%s",
+            request.merchant_name,
+            user_id,
         )
-
-    except Exception as error:
-
-        print(
-            "[RecordService] "
-            f"저장 실패: "
-            f"{type(error).__name__}: "
-            f"{error}"
-        )
-
-        traceback.print_exc()
 
 
 # ============================================================
@@ -348,6 +346,10 @@ async def ocr_classify(
     image: UploadFile = File(
         ...,
         description="영수증 이미지 파일",
+    ),
+    user_id: Optional[int] = Form(
+        default=None,
+        description="백엔드가 JWT 인증 후 전달하는 사용자 ID",
     ),
     merchant_name_override: Optional[str] = Form(
         default=None,
@@ -399,6 +401,16 @@ async def ocr_classify(
                 "비어있습니다."
             ),
         )
+
+    # ========================================================
+    # 영수증 원본 이미지 저장 (실패해도 분류는 계속 진행)
+    # ========================================================
+
+    image_url = None
+    try:
+        image_url = save_receipt_image(image_bytes, image.filename or "receipt.jpg")
+    except Exception:
+        logger.exception("영수증 이미지 저장 실패 (분류는 계속 진행)")
 
     # ========================================================
     # OCR fallback
@@ -725,6 +737,9 @@ async def ocr_classify(
             parsed.get(
                 "ocr_engine"
             ),
+
+        image_url=
+            image_url,
     )
 
     # ========================================================
@@ -735,6 +750,7 @@ async def ocr_classify(
         request=request,
         response=response,
         conn=conn,
+        user_id=user_id,
     )
 
     return response
@@ -743,6 +759,8 @@ async def ocr_classify(
 # ============================================================
 # Clova OCR 테스트
 # ============================================================
+# 테스트 전용 — api/ocr/classify(사진 업로드) + /feedback/chat(채팅) 2개로 정함.
+# 이 엔드포인트는 Clova OCR 동작이 잘 되는지 개발 중 확인하기 위한 용도로만 사용.
 
 @router.post(
     "/ocr/clova/classify",
@@ -752,6 +770,10 @@ async def ocr_clova_classify(
     image: UploadFile = File(
         ...,
         description="영수증 이미지 파일",
+    ),
+    user_id: Optional[int] = Form(
+        default=None,
+        description="백엔드가 JWT 인증 후 전달하는 사용자 ID",
     ),
     merchant_name_override: Optional[str] = Form(
         default=None,
@@ -1093,6 +1115,7 @@ async def ocr_clova_classify(
         request=request,
         response=response,
         conn=conn,
+        user_id=user_id,
     )
 
     return response

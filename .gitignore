@@ -36,6 +36,7 @@ data/SBO/
 
 # SBERT 모델
 app/services/greenstep_sbert_v2/
+uploads/
 
 *.backup
 docker-compose.local.yml

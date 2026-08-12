@@ -63,3 +63,4 @@ class ClassifyResponse(BaseModel):
 
     ocr_raw_text: Optional[str] = None
     ocr_engine: Optional[str] = None
+    image_url: Optional[str] = None  # 영수증 원본 이미지 저장 경로/URL (저장 실패 시 None)

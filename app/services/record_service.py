@@ -46,6 +46,7 @@ class RecordService:
         request: ClassifyRequest,
         response: ClassifyResponse,
         user_id: int | None = None,
+        image_url: str | None = None,
         conn=None,
     ) -> int:
         """
@@ -88,7 +89,8 @@ class RecordService:
                             source_type,
                             record_date,
                             total_amount,
-                            total_carbon_kg
+                            total_carbon_kg,
+                            image_url
                         )
                     VALUES
                         (
@@ -96,6 +98,7 @@ class RecordService:
                             %s,
                             %s,
                             'receipt',
+                            %s,
                             %s,
                             %s,
                             %s
@@ -113,6 +116,7 @@ class RecordService:
                             if response.total_carbon_kg is not None
                             else response.merchant_carbon_kg
                         ),
+                        image_url,
                     ),
                 )
 

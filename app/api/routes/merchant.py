@@ -1,3 +1,5 @@
+import logging
+logger = logging.getLogger(__name__)
 from datetime import date
 
 from fastapi import APIRouter, HTTPException, Query, Depends
@@ -18,7 +20,8 @@ router = APIRouter()
 classifier = MerchantClassifier()
 record_service = RecordService()
 
-
+# api/ocr/classify(사진 업로드) + /feedback/chat(채팅) 2개
+# 이 엔드포인트는 사진 없이 텍스트(가맹점명/품목)만으로 분류 로직을 검증하기 위한 용도로 사용함
 @router.post("/classify", response_model=ClassifyResponse)
 def classify_receipt(
     request: ClassifyRequest,
@@ -94,7 +97,7 @@ def classify_receipt(
         record_id = record_service.save_receipt(request, response, conn=conn)
         response.record_id = record_id
     except Exception:
-        pass
+        logger.exception("DB 저장 실패: merchant=%s", request.merchant_name)
 
     return response
 
