@@ -316,8 +316,6 @@ def extract_receipt_with_fallback(
             f"[OCR] 1차 Google Vision 실패: {error}"
         )
 
-        logger.info(f"[GoogleVision Parsed] {parsed}")
-
     # ── 2차: Gemini Vision ─────────────────────────────────────────────────
     try:
         gemini = extract_receipt_from_gemini_vision(

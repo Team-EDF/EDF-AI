@@ -12,6 +12,15 @@ from app.api.routes import (
 )
 
 from app.services.rag_index_service import build_rag_index
+from app.services.rag_service import get_vector_store
+from app.services.classifier import MerchantClassifier
+
+# [수정] ChatHistory는 앱 어디서도 import되지 않아 Base.metadata에
+# 등록되지 않았고, 그래서 아래 create_all()이 chat_history 테이블을
+# 생성하지 않았다 (SQLAlchemy는 import되어 클래스가 로드된 모델만
+# create_all() 대상으로 인식함). create_all() 호출 전에 반드시
+# import해서 등록되도록 추가.
+from app.models.chat_history import ChatHistory  # noqa: F401
 
 
 # ============================================================
@@ -108,6 +117,18 @@ def serve_ui():
 # ============================================================
 # Health Check
 # ============================================================
+
+@app.on_event("startup")
+def warm_up_models():
+    """
+    임베딩/분류 모델을 서버 기동 시점에 미리 로드해
+    (특히 HuggingFace Hub에서 받아오는 RAG 임베딩 모델)
+    재시작 직후 첫 요청이 모델 로딩 지연으로
+    클라이언트 타임아웃에 걸리는 것을 방지한다.
+    """
+    get_vector_store()
+    MerchantClassifier._get_model()
+
 
 @app.get("/health")
 def health_check():
