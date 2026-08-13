@@ -14,31 +14,48 @@ EMBEDDING_MODEL = (
 # Embedding
 # ============================================================
 
+_embeddings: HuggingFaceEmbeddings | None = None
+
+
 def get_embeddings():
     """
-    RAG 검색용 임베딩 모델을 생성한다.
+    RAG 검색용 임베딩 모델을 최초 한 번만 로드하고 재사용한다.
+
+    매 요청마다 새로 생성하면 HuggingFace Hub 접근이
+    요청마다 반복되어 지연/실패(타임아웃)의 원인이 된다.
     """
 
-    return HuggingFaceEmbeddings(
-        model_name=EMBEDDING_MODEL
-    )
+    global _embeddings
+
+    if _embeddings is None:
+        _embeddings = HuggingFaceEmbeddings(
+            model_name=EMBEDDING_MODEL
+        )
+
+    return _embeddings
 
 
 # ============================================================
 # Vector Store
 # ============================================================
 
+_vector_store: Chroma | None = None
+
+
 def get_vector_store():
     """
-    기존 Chroma 벡터스토어를 불러온다.
+    기존 Chroma 벡터스토어를 최초 한 번만 불러오고 재사용한다.
     """
 
-    embeddings = get_embeddings()
+    global _vector_store
 
-    return Chroma(
-        persist_directory=CHROMA_DIR,
-        embedding_function=embeddings,
-    )
+    if _vector_store is None:
+        _vector_store = Chroma(
+            persist_directory=CHROMA_DIR,
+            embedding_function=get_embeddings(),
+        )
+
+    return _vector_store
 
 
 # ============================================================

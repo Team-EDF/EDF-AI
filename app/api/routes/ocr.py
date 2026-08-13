@@ -30,13 +30,14 @@ from app.services.classifier import MerchantClassifier
 from app.services.clova_ocr_service import extract_receipt_from_clova
 from app.services.image_storage_service import save_receipt_image
 from app.services.ocr_fallback_service import extract_receipt_with_fallback
-from app.services.record_service import RecordService
+
+# [수정] record_service.save_receipt()가 항상 실패하는 저장 시도였던
+# 것을 _save_classification_result()에서 제거하면서 더 이상 쓰지 않음.
 
 
 router = APIRouter()
 
 classifier = MerchantClassifier()
-record_service = RecordService()
 
 
 # ============================================================
@@ -299,6 +300,17 @@ def _build_classify_request(
 # DB 저장
 # ============================================================
 
+# [수정] record_service.save_receipt()는 merchant_name/payment_location
+# 컬럼과 items 테이블(둘 다 record_service.py가 상정한 스키마이며 실제
+# consumption_records/items 테이블에는 없음)에 INSERT를 시도해서 항상
+# 예외로 끝났다 (아래 try/except가 매번 삼켜서 로그만 쌓였음).
+#
+# 실제로는 백엔드(RecordConfirmService)가 이 엔드포인트의 응답을
+# consumption_records.ocr_data에 JSON으로 그대로 저장하고, record_id도
+# 백엔드가 직접 생성/관리한다 (이 함수가 설정하던 response.record_id는
+# 백엔드에서 읽지 않음). 그래서 AI 쪽에서 별도로 저장을 시도할 필요가
+# 없어 호출을 제거했다. 품목별 통계는 feedback_service.py가
+# consumption_records.ocr_data를 파싱해서 계산한다.
 def _save_classification_result(
     request: ClassifyRequest,
     response: ClassifyResponse,
@@ -306,32 +318,10 @@ def _save_classification_result(
     user_id: Optional[int] = None,
 ) -> None:
     """
-    분류 결과를 DB에 저장하고
-    response.record_id를 설정한다.
-
-    DB 저장 실패가 OCR·분류 결과 반환까지
-    막지는 않도록 예외를 잡는다.
+    (현재는 no-op) 과거에는 여기서 분류 결과를 AI 쪽 DB에 직접 저장했으나,
+    실제 저장은 백엔드가 담당하므로 더 이상 아무 것도 하지 않는다.
     """
-
-    try:
-        record_id = (
-            record_service.save_receipt(
-                request=request,
-                response=response,
-                user_id=user_id,
-                image_url=response.image_url,
-                conn=conn,
-            )
-        )
-
-        response.record_id = record_id
-
-    except Exception:
-        logger.exception(
-            "DB 저장 실패: merchant=%s, user_id=%s",
-            request.merchant_name,
-            user_id,
-        )
+    return
 
 
 # ============================================================
