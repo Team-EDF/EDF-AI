@@ -12,14 +12,10 @@ from app.api.routes import (
 )
 
 from app.services.rag_index_service import build_rag_index
-from app.services.rag_service import get_vector_store
 from app.services.classifier import MerchantClassifier
 
-# [수정] ChatHistory는 앱 어디서도 import되지 않아 Base.metadata에
-# 등록되지 않았고, 그래서 아래 create_all()이 chat_history 테이블을
-# 생성하지 않았다 (SQLAlchemy는 import되어 클래스가 로드된 모델만
-# create_all() 대상으로 인식함). create_all() 호출 전에 반드시
-# import해서 등록되도록 추가.
+# ChatHistory는 앱 어디서도 import되지 않으면 Base.metadata에
+# 등록되지 않으므로 create_all() 실행 전에 import해야 한다.
 from app.models.chat_history import ChatHistory  # noqa: F401
 
 
@@ -57,9 +53,15 @@ app.add_middleware(
 # API Router 등록
 # ============================================================
 
-# 외부 공식 API : POST /api/ocr/classify(사진 업로드) + POST /feedback/chat(채팅) 2개
-# merchant.router/ocr.router 안의 나머지 엔드포인트(/api/classify, /api/ocr/clova/classify 등등)는
-# 내부 테스트/디버깅 전용이며 백엔드/프론트가 호출할 계약 대상이 아님.
+# 외부 공식 API :
+# POST /api/ocr/classify(사진 업로드)
+# POST /feedback/chat(채팅)
+#
+# merchant.router / ocr.router 안의 나머지 엔드포인트
+# (/api/classify, /api/ocr/clova/classify 등)는
+# 내부 테스트/디버깅 전용이며
+# 백엔드/프론트가 호출할 공식 계약 대상이 아님.
+
 
 # 가맹점 / 품목 분류 API
 app.include_router(
@@ -68,12 +70,14 @@ app.include_router(
     tags=["classify"],
 )
 
+
 # 영수증 OCR + 분류 + 탄소 계산 + DB 저장
 app.include_router(
     ocr.router,
     prefix="/api",
     tags=["ocr"],
 )
+
 
 # 소비기록 기반 RAG + Gemini 피드백 채팅
 #
@@ -115,20 +119,26 @@ def serve_ui():
 
 
 # ============================================================
-# Health Check
+# SBERT 모델 Warm-up
 # ============================================================
 
 @app.on_event("startup")
 def warm_up_models():
     """
-    임베딩/분류 모델을 서버 기동 시점에 미리 로드해
-    (특히 HuggingFace Hub에서 받아오는 RAG 임베딩 모델)
-    재시작 직후 첫 요청이 모델 로딩 지연으로
-    클라이언트 타임아웃에 걸리는 것을 방지한다.
+    1차 배포에서는 분류용 SBERT만 기동 시 검증/로딩한다.
+
+    RAG용 HuggingFace embedding 모델까지 동시에 warm-up 하면
+    CPU 전용 EKS Pod에서 두 모델이 한 번에 메모리에 올라가
+    startup 시점의 메모리 peak가 커진다.
+
+    RAG vector store는 실제 RAG 요청이 들어올 때 lazy-load 한다.
     """
-    get_vector_store()
     MerchantClassifier._get_model()
 
+
+# ============================================================
+# Health Check
+# ============================================================
 
 @app.get("/health")
 def health_check():

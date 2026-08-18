@@ -22,7 +22,10 @@ from app.database.connection import get_db_connection
 from app.services.category_maps import MAIN_CATEGORY_KEYWORD, MIDDLE_CATEGORY_KEYWORD
 
 
-SBERT_MODEL_NAME = os.path.join(BASE_DIR, "app", "services", "greenstep_sbert_v2")
+SBERT_MODEL_NAME = os.getenv(
+    "SBERT_MODEL_PATH",
+    os.path.join(BASE_DIR, "app", "services", "greenstep_sbert_v2"),
+)
 
 
 def setup_tables(cursor) -> None:
@@ -95,7 +98,19 @@ def embed_main_categories(cursor, model: SentenceTransformer) -> int:
 
 def main():
     print(f"Loading SBERT model ({SBERT_MODEL_NAME})...")
-    model = SentenceTransformer(SBERT_MODEL_NAME)
+
+    modules_file = os.path.join(SBERT_MODEL_NAME, "modules.json")
+    if not os.path.isfile(modules_file):
+        raise RuntimeError(
+            "SBERT model is not mounted correctly. "
+            f"Expected file: {modules_file}"
+        )
+
+    model = SentenceTransformer(
+        SBERT_MODEL_NAME,
+        local_files_only=True,
+        device="cpu",
+    )
 
     conn = get_db_connection()
     cursor = conn.cursor()

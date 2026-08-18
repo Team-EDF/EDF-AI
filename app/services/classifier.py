@@ -14,7 +14,10 @@ from app.services.gemini_classifier import GeminiClassifier
 
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SBERT_MODEL_NAME = os.path.join(BASE_DIR, "services", "greenstep_sbert_v2")
+SBERT_MODEL_NAME = os.getenv(
+    "SBERT_MODEL_PATH",
+    os.path.join(BASE_DIR, "services", "greenstep_sbert_v2"),
+)
 SIMILARITY_THRESHOLD = 0.5
 
 
@@ -31,7 +34,18 @@ class MerchantClassifier:
     @classmethod
     def _get_model(cls) -> SentenceTransformer:
         if cls._model is None:
-            cls._model = SentenceTransformer(SBERT_MODEL_NAME)
+            modules_file = os.path.join(SBERT_MODEL_NAME, "modules.json")
+            if not os.path.isfile(modules_file):
+                raise RuntimeError(
+                    "SBERT model is not mounted correctly. "
+                    f"Expected file: {modules_file}"
+                )
+
+            cls._model = SentenceTransformer(
+                SBERT_MODEL_NAME,
+                local_files_only=True,
+                device="cpu",
+            )
         return cls._model
 
     @staticmethod
@@ -358,4 +372,3 @@ class MerchantClassifier:
         finally:
             if own_conn:
                 conn.close()
-
