@@ -12,6 +12,7 @@ from app.api.routes import (
 )
 
 from app.services.rag_index_service import build_rag_index
+from app.services.classifier import MerchantClassifier
 
 
 # ============================================================
@@ -48,9 +49,15 @@ app.add_middleware(
 # API Router 등록
 # ============================================================
 
-# 외부 공식 API : POST /api/ocr/classify(사진 업로드) + POST /feedback/chat(채팅) 2개
-# merchant.router/ocr.router 안의 나머지 엔드포인트(/api/classify, /api/ocr/clova/classify 등등)는
-# 내부 테스트/디버깅 전용이며 백엔드/프론트가 호출할 계약 대상이 아님.
+# 외부 공식 API :
+# POST /api/ocr/classify(사진 업로드)
+# POST /feedback/chat(채팅)
+#
+# merchant.router / ocr.router 안의 나머지 엔드포인트
+# (/api/classify, /api/ocr/clova/classify 등)는
+# 내부 테스트/디버깅 전용이며
+# 백엔드/프론트가 호출할 공식 계약 대상이 아님.
+
 
 # 가맹점 / 품목 분류 API
 app.include_router(
@@ -59,12 +66,14 @@ app.include_router(
     tags=["classify"],
 )
 
+
 # 영수증 OCR + 분류 + 탄소 계산 + DB 저장
 app.include_router(
     ocr.router,
     prefix="/api",
     tags=["ocr"],
 )
+
 
 # 소비기록 기반 RAG + Gemini 피드백 채팅
 #
@@ -103,6 +112,24 @@ def serve_ui():
     return FileResponse(
         "static/index.html"
     )
+
+
+# ============================================================
+# SBERT 모델 Warm-up
+# ============================================================
+
+@app.on_event("startup")
+def warm_up_models():
+    """
+    1차 배포에서는 분류용 SBERT만 기동 시 검증/로딩한다.
+
+    RAG용 HuggingFace embedding 모델까지 동시에 warm-up 하면
+    CPU 전용 EKS Pod에서 두 모델이 한 번에 메모리에 올라가
+    startup 시점의 메모리 peak가 커진다.
+
+    RAG vector store는 실제 RAG 요청이 들어올 때 lazy-load 한다.
+    """
+    MerchantClassifier._get_model()
 
 
 # ============================================================
