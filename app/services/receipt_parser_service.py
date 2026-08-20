@@ -54,6 +54,13 @@ _MERCHANT_SKIP = {
     "수량",
     "금액",
     "결제대상금액",
+    "픽업번호",
+    "픽업 번호",
+    "주문번호",
+    "주문접수시간",
+    "유형",
+    "포장주문",
+    "메뉴",
 }
 
 # 소계 / 중간합계
@@ -70,33 +77,39 @@ _SUBTOTAL_KEYWORDS = {
 
 # 총액 우선 키워드
 _TOTAL_PRIORITY = [
-    "결제대상금액",       # 추가
-    "결제 대상 금액",     # 추가
+    "실결제금액",
+    "실결제",
+    "결제대상금액",
+    "결제 대상 금액",
     "결제금액",
     "결제 금액",
+    "사용금액",
+    "사용 금액",
+    "승인금액",
+    "승인 금액",
+    "청구금액",
+    "청구액",
     "받을금액",
     "받을 금액",
     "받은금액",
     "받은 금액",
-    "총금액",
-    "총 금액",
-    "총액",
-    "실결제",
-    "실결제금액",
-    "청구금액",
-    "합계금액",
-    "판매총액",
-    "판매 총액",
+    "신용카드지불",
+    "신용카드 지불",
+    "매출금액",
 ]
 
 _TOTAL_SECONDARY = [
-    "합계",
-    "합게",
+    "합계금액",
+    "총금액",
+    "총 금액",
+    "총액",
+    "판매총액",
+    "판매 총액",
     "총매출액",
     "매출액",
+    "합계",
+    "합게",
     "total",
-    "금액:",
-    "계:",
 ]
 
 # 카드번호 / 거래번호
@@ -116,6 +129,8 @@ _NON_ITEM_NAMES = {
     "결제금",
     "승인금액",
     "청구금액",
+    "청구액",
+    "사용금액",
 
     "합계",
     "총합계",
@@ -167,6 +182,12 @@ _NON_ITEM_NAMES = {
 
     "no",
     "no.",
+
+    "포인트",
+    "적립포인트",
+    "잔여포인트",
+    "잔여",
+    "승인번호",
 }
 
 
@@ -191,6 +212,12 @@ def clean_ocr_text(
         ).strip()
 
         line = re.sub(
+            r"(?<=\d)([-./])\1+(?=\d)",
+            r"\1",
+            line,
+        )
+
+        line = re.sub(
             r"\s+",
             " ",
             line,
@@ -212,43 +239,78 @@ def extract_merchant_name(
     text: str,
 ) -> Optional[str]:
     """
-    레이블 우선 →
-    상단 휴리스틱 순서로 가맹점명 추출.
+    가맹점명을 추출한다.
+
+    핵심 원칙:
+    1. 명시적인 가맹점명/상호 레이블을 최우선으로 사용한다.
+    2. 상품/메뉴 영역이 시작된 이후의 텍스트는 가맹점명 후보로 사용하지 않는다.
+       → 주문전표에서 '우삼겹 포케볼' 같은 실제 상품명을 상호명으로 오인하는 문제 방지.
+    3. 사업자정보, 주소, 날짜, 주문정보, 영수증 메타데이터는 제외한다.
     """
 
     lines = text.splitlines()
 
-    # 1. 명시적 레이블
-    for line in lines[:20]:
+    # -------------------------------------------------------------
+    # 상품/메뉴 영역 시작 위치 탐색
+    # -------------------------------------------------------------
+    item_section_idx: Optional[int] = None
+
+    for i, raw_line in enumerate(lines):
+        line = raw_line.strip()
+
+        if re.search(
+            r"^(상품명|품\s*명|품목명|상품|메뉴|상품\(코드\))(\s|$)",
+            line,
+        ):
+            item_section_idx = i
+            break
+
+    # 상품 영역이 있다면 그 이전까지만 상호명 후보로 본다.
+    # 상품 영역이 없다면 기존처럼 영수증 상단 일부만 본다.
+    search_end = (
+        item_section_idx
+        if item_section_idx is not None
+        else min(len(lines), 25)
+    )
+
+    merchant_lines = lines[:search_end]
+
+    # -------------------------------------------------------------
+    # 1. 명시적인 레이블 우선
+    # -------------------------------------------------------------
+    for line in merchant_lines[:20]:
 
         m = _MERCHANT_LABEL_RE.match(
             line.strip()
         )
 
-        if m:
+        if not m:
+            continue
 
-            name = (
-                m.group(2)
-                .strip()
-            )
+        name = (
+            m.group(2)
+            .strip()
+        )
 
-            name = re.sub(
-                r"[^\w\s가-힣]",
-                "",
-                name,
-            ).strip()
+        name = re.sub(
+            r"[^\w\s가-힣]",
+            "",
+            name,
+        ).strip()
 
-            if (
-                len(name) >= 2
-                and is_valid_item_name(name)
-            ):
-                return name
+        if (
+            len(name) >= 2
+            and is_valid_item_name(name)
+        ):
+            return name
 
     korean_candidate = None
     english_candidate = None
 
-    # 2. 영수증 상단 검색
-    for line in lines[:8]:
+    # -------------------------------------------------------------
+    # 2. 상단 휴리스틱 검색
+    # -------------------------------------------------------------
+    for line in merchant_lines:
 
         line = line.strip()
 
@@ -259,9 +321,40 @@ def extract_merchant_name(
         ):
             continue
 
+        # 숫자/기호만 있는 라인
         if re.fullmatch(
-            r"[\d\s\-/.,:()]+",
+            r"[\d\s\-/.,:()\[\]]+",
             line,
+        ):
+            continue
+
+        # 주문전표/영수증 메타정보
+        lower = line.lower()
+        lower_nospace = lower.replace(" ", "")
+
+        merchant_meta_keywords = [
+            "픽업번호",
+            "픽업 번호",
+            "유형",
+            "포장주문",
+            "매장주문",
+            "주문접수시간",
+            "주문시간",
+            "테이블명",
+            "판매시간",
+            "판매일",
+            "계산대",
+            "영수번호",
+            "영수증번호",
+            "카드판매",
+            "고객용",
+            "가맹점용",
+            "회원용",
+        ]
+
+        if any(
+            keyword.replace(" ", "") in lower_nospace
+            for keyword in merchant_meta_keywords
         ):
             continue
 
@@ -275,19 +368,22 @@ def extract_merchant_name(
         ):
             continue
 
+        # 전화번호 계열
         if re.search(
             r"\d{2,4}[-–]\d{3,4}(?!\d)",
             line,
         ):
             continue
 
+        # 주소
         if _ADDRESS_RE.search(
             line
         ):
             continue
 
+        # 기존 skip 키워드
         if any(
-            kw in line.lower()
+            kw.lower() in lower
             for kw in _MERCHANT_SKIP
         ):
             continue
@@ -298,7 +394,7 @@ def extract_merchant_name(
         ):
             continue
 
-        # 가게명 / 대표자명
+        # "가게명 / 대표자명" 형태
         if "/" in line or "／" in line:
 
             candidate = re.split(
@@ -338,6 +434,7 @@ def extract_merchant_name(
         if len(name) < 2:
             continue
 
+        # 문장형 안내문을 상호명으로 잡는 것 방지
         if len(
             name.split()
         ) >= 4:
@@ -358,7 +455,7 @@ def extract_merchant_name(
             continue
 
         if any(
-            kw.replace(" ", "")
+            kw.replace(" ", "").lower()
             in name_no_space
             for kw in (
                 _TOTAL_PRIORITY
@@ -367,153 +464,22 @@ def extract_merchant_name(
         ):
             continue
 
+        # 한글 상호명을 우선
         if re.search(
             r"[가-힣]",
             name,
         ):
-
             if korean_candidate is None:
                 korean_candidate = name
 
-        else:
-
-            if (
-                english_candidate is None
-                and re.search(
-                    r"[a-z]",
-                    name,
-                )
-            ):
-                english_candidate = name
-
-    # 상단에서 찾지 못했으면 조금 더 아래 검색
-    if korean_candidate is None:
-
-        for line in lines[8:25]:
-
-            line = line.strip()
-
-            if (
-                not line
-                or len(line) < 2
-                or len(line) > 40
-            ):
-                continue
-
-            if re.fullmatch(
-                r"[\d\s\-/.,:()]+",
-                line,
-            ):
-                continue
-
-            if is_noise_line(
-                line
-            ):
-                continue
-
-            if _DATE_RE.search(
-                line
-            ):
-                continue
-
-            if re.search(
-                r"\d{2,4}[-–]\d{3,4}(?!\d)",
-                line,
-            ):
-                continue
-
-            if _ADDRESS_RE.search(
-                line
-            ):
-                continue
-
-            if any(
-                kw in line.lower()
-                for kw in _MERCHANT_SKIP
-            ):
-                continue
-
-            if not re.search(
-                r"[가-힣a-zA-Z]",
-                line,
-            ):
-                continue
-
-            if "/" in line or "／" in line:
-
-                candidate = re.split(
-                    r"[/／]",
-                    line,
-                )[0].strip()
-
-                cname = re.sub(
-                    r"[^\w\s가-힣]",
-                    "",
-                    candidate,
-                ).strip()
-
-                if (
-                    len(cname) >= 2
-                    and re.search(
-                        r"[가-힣a-zA-Z]",
-                        cname,
-                    )
-                ):
-                    korean_candidate = cname
-                    break
-
-                continue
-
-            name = re.sub(
-                r"[^\w\s가-힣]",
-                "",
-                line,
-            ).strip()
-
-            if re.search(
-                r"^\d[\d,]*원$",
+        elif (
+            english_candidate is None
+            and re.search(
+                r"[a-zA-Z]",
                 name,
-            ):
-                continue
-
-            if len(name) < 2:
-                continue
-
-            if len(
-                name.split()
-            ) >= 4:
-                continue
-
-            name_no_space = (
-                name.replace(
-                    " ",
-                    "",
-                )
-                .lower()
             )
-
-            if (
-                name_no_space
-                in _NON_ITEM_NAMES
-            ):
-                continue
-
-            if any(
-                kw.replace(" ", "")
-                in name_no_space
-                for kw in (
-                    _TOTAL_PRIORITY
-                    + _TOTAL_SECONDARY
-                )
-            ):
-                continue
-
-            if re.search(
-                r"[가-힣]",
-                name,
-            ):
-                korean_candidate = name
-                break
+        ):
+            english_candidate = name
 
     return (
         korean_candidate
@@ -748,55 +714,41 @@ def extract_amounts(
 def extract_total_amount(
     text: str,
 ) -> Optional[int]:
+    """
+    영수증의 실제 결제 금액을 추출한다.
+
+    1) 결제/청구/사용금액 등 우선 키워드
+    2) 합계 계열 보조 키워드
+    3) 식별번호/포인트/카드정보를 제외한 금액 후보
+    순서로 탐색한다.
+    """
 
     lines = text.splitlines()
 
+    # OCR이 '합' / '계'처럼 잘라 읽는 경우를 보정한다.
     merged: List[str] = []
-
     k = 0
 
     while k < len(lines):
-
         s = lines[k].strip()
 
         if s == "계":
-
-            merged.append(
-                "합계"
-            )
-
+            merged.append("합계")
             k += 1
             continue
 
         if (
-            re.fullmatch(
-                r"[가-힣]{1,2}",
-                s,
-            )
+            re.fullmatch(r"[가-힣]{1,2}", s)
             and k + 1 < len(lines)
         ):
+            nxt = lines[k + 1].strip()
 
-            nxt = (
-                lines[k + 1]
-                .strip()
-            )
-
-            if re.fullmatch(
-                r"[가-힣]{1,2}",
-                nxt,
-            ):
-
-                merged.append(
-                    s + nxt
-                )
-
+            if re.fullmatch(r"[가-힣]{1,2}", nxt):
+                merged.append(s + nxt)
                 k += 2
                 continue
 
-        merged.append(
-            s
-        )
-
+        merged.append(s)
         k += 1
 
     lines = merged
@@ -804,103 +756,77 @@ def extract_total_amount(
     def _safe_amounts(
         line: str,
     ) -> List[int]:
-
         if (
             is_noise_line(line)
-            or _MASKED_NUMBER_RE.search(
-                line
-            )
+            or is_identifier_line(line)
+            or _MASKED_NUMBER_RE.search(line)
         ):
             return []
 
-        return extract_amounts(
-            line
-        )
+        return extract_amounts(line)
 
     for keywords in [
         _TOTAL_PRIORITY,
         _TOTAL_SECONDARY,
     ]:
-
-        for i, line in enumerate(
-            lines
-        ):
-
+        for i, line in enumerate(lines):
             lower = line.lower()
+            lower_nospace = lower.replace(" ", "")
 
-            lower_nospace = (
-                lower.replace(
-                    " ",
-                    "",
-                )
-            )
-
-            if any(
+            if not any(
                 kw in lower
-                or kw.replace(
-                    " ",
-                    "",
-                ) in lower_nospace
+                or kw.replace(" ", "") in lower_nospace
                 for kw in keywords
             ):
+                continue
 
-                if (
-                    is_discount_line(line)
-                    or is_subtotal_line(line)
-                ):
-                    continue
+            if (
+                is_discount_line(line)
+                or is_subtotal_line(line)
+                or is_identifier_line(line)
+            ):
+                continue
 
-                if lower.strip() == "total":
-                    continue
+            if lower.strip() == "total":
+                continue
 
-                amounts = extract_amounts(
-                    line
-                )
-
+            # 우선 키워드 라인은 그 자체가 noise keyword일 수 있다.
+            # 예: "사용금액 2,900원", "승인금액: 52,190"
+            # 따라서 같은 줄의 금액은 is_noise_line()을 거치지 않고 직접 추출한다.
+            if (
+                not is_identifier_line(line)
+                and not _MASKED_NUMBER_RE.search(line)
+            ):
+                amounts = extract_amounts(line)
                 if amounts:
                     return amounts[-1]
 
-                forward_amounts: List[int] = []
+            # 다음 줄에서 가장 가까운 유효 금액을 우선 탐색.
+            # 기존처럼 10줄 전체 중 max()를 고르면 포인트/식별값을
+            # 총액으로 오인할 가능성이 커서 가까운 값부터 반환한다.
+            for j in range(
+                i + 1,
+                min(i + 6, len(lines)),
+            ):
+                amounts = _safe_amounts(lines[j].strip())
+                if amounts:
+                    return amounts[-1]
 
-                for j in range(
-                    i + 1,
-                    min(
-                        i + 11,
-                        len(lines),
-                    ),
-                ):
+            # OCR 순서가 뒤집힌 경우를 위한 역방향 보조 탐색.
+            for j in range(
+                i - 1,
+                max(i - 6, -1),
+                -1,
+            ):
+                amounts = _safe_amounts(lines[j].strip())
+                if amounts:
+                    return amounts[-1]
 
-                    forward_amounts.extend(
-                        _safe_amounts(
-                            lines[j].strip()
-                        )
-                    )
-
-                if forward_amounts:
-                    return max(
-                        forward_amounts
-                    )
-
-                for j in range(
-                    i - 1,
-                    max(
-                        i - 11,
-                        -1,
-                    ),
-                    -1,
-                ):
-
-                    amounts = _safe_amounts(
-                        lines[j].strip()
-                    )
-
-                    if amounts:
-                        return amounts[-1]
-
-    all_amounts = []
+    # 최후 fallback.
+    # 식별번호/포인트/카드정보는 제외하고 가장 큰 금액을 사용한다.
+    all_amounts: List[int] = []
 
     for line in lines:
-
         all_amounts.extend(
             _safe_amounts(
                 line.strip()
@@ -976,6 +902,13 @@ def is_valid_item_name(
     # 금액만
     if re.fullmatch(
         r"[\d,]+\s*원?",
+        name,
+    ):
+        return False
+
+    # 포인트 숫자
+    if re.fullmatch(
+        r"[\d,.]+\s*점",
         name,
     ):
         return False
@@ -1088,6 +1021,8 @@ def is_noise_line(
         "결제 금액",
         "승인금액",
         "청구금액",
+        "청구액",
+        "사용금액",
         "받을금액",
         "받은금액",
         "판매총액",
@@ -1391,6 +1326,56 @@ def is_subtotal_line(
         for kw in _SUBTOTAL_KEYWORDS
     )
 
+def is_identifier_line(
+    line: str,
+) -> bool:
+    """
+    금액처럼 보일 수 있지만 실제로는 식별번호/포인트/승인정보인 라인인지 판별.
+    """
+
+    lower = line.lower().strip()
+    lower_nospace = lower.replace(" ", "")
+
+    identifier_keywords = [
+        "no:",
+        "no.",
+        "번호",
+        "승인번호",
+        "승인no",
+        "사업자번호",
+        "사업자등록번호",
+        "카드번호",
+        "가맹점번호",
+        "전표번호",
+        "거래번호",
+        "주문번호",
+        "영수증번호",
+        "전화",
+        "tel",
+        "포인트",
+        "적립포인트",
+        "잔여포인트",
+        "사용가능포인트",
+    ]
+
+    if any(
+        keyword.replace(" ", "") in lower_nospace
+        for keyword in identifier_keywords
+    ):
+        return True
+
+    # 바코드 / 긴 식별번호
+    digits_only = re.sub(
+        r"\D",
+        "",
+        line,
+    )
+
+    if len(digits_only) >= 8:
+        return True
+
+    return False
+
 
 # ── 가격 선택 ─────────────────────────────────────────────────────────────────
 
@@ -1398,38 +1383,292 @@ def choose_item_price(
     amounts: List[int],
     total_amount: Optional[int],
 ) -> Optional[int]:
+    """
+    한 라인에 여러 금액이 있을 때 마지막 금액을 우선한다.
+
+    POS 영수증은 보통
+    단가 -> 수량 -> 금액
+    순서로 표기되는 경우가 많으므로 최소값보다 마지막 값을
+    사용하는 편이 실제 구매금액에 가깝다.
+    """
 
     if not amounts:
         return None
 
-    upper = (
-        total_amount * 10
-        if total_amount
-        else 10_000_000
-    )
-
     candidates = [
         amount
         for amount in amounts
-        if amount <= upper
+        if amount > 0
     ]
 
-    if total_amount:
-
+    if total_amount is not None:
         candidates = [
             amount
             for amount in candidates
             if amount <= total_amount
         ]
 
-    return (
-        min(candidates)
-        if candidates
-        else None
-    )
+    if not candidates:
+        return None
+
+    return candidates[-1]
 
 
 # ── 품목 추출 ─────────────────────────────────────────────────────────────────
+def extract_column_items(
+    text: str,
+    total_amount: Optional[int],
+) -> List[Dict]:
+    """
+    상품명들이 먼저 나오고 가격/수량/금액이 뒤에 몰려 나오는
+    컬럼형 OCR 결과를 복구한다.
+
+    예:
+        상품명
+        상품 A
+        상품 B
+        단가 수량 금액
+        6000 1 6000
+        6000 3 18000
+    """
+
+    lines = text.splitlines()
+
+    header_idx: Optional[int] = None
+
+    # 상품 영역 시작점
+    for i, line in enumerate(lines):
+        if re.search(
+            r"^(상품명|품\s*명|품목명|상품|메뉴)(\s|$)",
+            line.strip(),
+        ):
+            header_idx = i
+            break
+
+    if header_idx is None:
+        return []
+
+    names: List[str] = []
+    price_rows: List[int] = []
+
+    price_section_started = False
+
+    end_keywords = [
+        "합계",
+        "총액",
+        "총금액",
+        "결제금액",
+        "청구액",
+        "청구금액",
+        "사용금액",
+        "신용카드",
+        "카드지불",
+        "부가세",
+        "과세물품",
+        "면세물품",
+        "공급가",
+        "공급가액",
+        "물품가액",
+        "세물품가",
+        "세물품가액",
+        "포인트",
+    ]
+
+    column_name_skip_keywords = [
+        "재출력",
+        "사은품",
+        "중복 사용불가",
+        "중복사용불가",
+        "고객용",
+        "가맹점용",
+        "회원용",
+    ]
+
+    for i in range(
+        header_idx + 1,
+        len(lines),
+    ):
+
+        stripped = lines[i].strip()
+
+        if not stripped:
+            continue
+
+        lower = stripped.lower()
+        lower_nospace = lower.replace(" ", "")
+
+        # ---------------------------------------------------------
+        # 상품 영역 종료
+        # ---------------------------------------------------------
+        if any(
+            keyword.replace(" ", "") in lower_nospace
+            for keyword in end_keywords
+        ):
+            break
+
+        if is_noise_line(stripped):
+            continue
+
+        if is_discount_line(stripped):
+            continue
+
+        if is_option_line(stripped):
+            continue
+
+        if _DATE_RE.search(stripped):
+            continue
+
+        # 바코드/식별번호는 이름을 초기화하지 않고 그냥 건너뜀
+        if is_identifier_line(stripped):
+            continue
+
+        # ---------------------------------------------------------
+        # 단가 / 수량 / 금액 컬럼 헤더
+        # ---------------------------------------------------------
+        # 이것만 보고 가격 영역으로 전환하면 안 된다.
+        #
+        # 예:
+        # 상품명
+        # 단가 수량
+        # 금액
+        # 송 메밀국수정식
+        # 송 치즈돈까스
+        # 17,000 ...
+        #
+        # 위 구조에서도 상품명은 컬럼 헤더 아래에 나오므로
+        # 단순히 헤더만 무시한다.
+        if re.search(
+            r"^(단가|수량|금액)(\s+(단가|수량|금액))*$",
+            stripped,
+        ):
+            continue
+
+        amounts = extract_amounts(stripped)
+
+        # ---------------------------------------------------------
+        # 이름 영역
+        # ---------------------------------------------------------
+        if not price_section_started:
+
+            # 상품명을 하나 이상 확보한 상태에서
+            # 실제 금액이 나오면 가격 영역으로 전환
+            if amounts and names:
+                price_section_started = True
+
+            # 상품명도 없는데 숫자가 먼저 나오면
+            # 상단 메타정보일 가능성이 높으므로 무시
+            elif amounts:
+                continue
+
+            else:
+
+                # 재출력/공지 문구는 상품명 후보에서 제외
+                if any(
+                    keyword in stripped
+                    for keyword in column_name_skip_keywords
+                ):
+                    continue
+
+                name = normalize_item_name(stripped)
+
+                # 상품 번호 제거
+                # 001 트레비레몬 → 트레비레몬
+                name = re.sub(
+                    r"^\d{1,3}\s+",
+                    "",
+                    name,
+                ).strip()
+
+                # POS prefix 제거
+                # P 삼겹살 → 삼겹살
+                name = re.sub(
+                    r"^[Pp]\s+",
+                    "",
+                    name,
+                ).strip()
+
+                if is_valid_item_name(name):
+                    names.append(name)
+
+                continue
+
+        # ---------------------------------------------------------
+        # 가격 영역
+        # ---------------------------------------------------------
+        if not amounts:
+            continue
+
+        # 같은 라인에:
+        # 6,000 3 18,000
+        #
+        # 같은 구조가 있으면 마지막 값을 line total로 간주
+        if len(amounts) >= 2:
+            candidate = amounts[-1]
+
+        else:
+            candidate = amounts[0]
+
+        if candidate <= 0:
+            continue
+
+        if (
+            total_amount is not None
+            and candidate > total_amount
+        ):
+            continue
+
+        # 동일 숫자가 연속으로 나오는 경우
+        # 단가와 최종금액이 같은 수량 1 상품일 가능성이 있으므로
+        # 하나만 저장
+        if (
+            price_rows
+            and price_rows[-1] == candidate
+        ):
+            continue
+
+        price_rows.append(candidate)
+
+        # 상품명 수만큼 가격을 확보했으면 종료
+        # 이후 세금/공급가/포인트 영역 숫자를 가져오지 않는다.
+        if (
+            names
+            and len(price_rows) >= len(names)
+        ):
+            break
+
+    # -------------------------------------------------------------
+    # 결과 검증
+    # -------------------------------------------------------------
+    if not names or not price_rows:
+        return []
+
+    if len(price_rows) < len(names):
+        return []
+
+    results: List[Dict] = []
+
+    for idx, name in enumerate(names):
+
+        if idx >= len(price_rows):
+            break
+
+        price = price_rows[idx]
+
+        if (
+            price <= 0
+            or not is_valid_item_name(name)
+        ):
+            continue
+
+        results.append(
+            {
+                "name": name,
+                "price": price,
+            }
+        )
+
+    return results
+
 
 def extract_items(
     text: str,
@@ -1438,18 +1677,14 @@ def extract_items(
 
     lines = text.splitlines()
 
-    items = []
+    items: List[Dict] = []
 
-    last_item_price = None
-
-    current_item_name = None
-
-    item_name_line_index = None
+    last_item_price: Optional[int] = None
+    current_item_name: Optional[str] = None
+    item_name_line_index: Optional[int] = None
 
     pending_names: List[str] = []
-
     break_line_idx: Optional[int] = None
-
     column_format_abandoned = False
 
     # 상품 영역 시작점
@@ -1495,6 +1730,31 @@ def extract_items(
             )
         )
 
+        item_section_end_keywords = [
+            "합계",
+            "합계금액",
+            "총금액",
+            "총구매액",
+            "청구액",
+            "청구금액",
+            "결제금액",
+            "사용금액",
+            "신용카드지불",
+            "신용카드",
+            "과세물품",
+            "면세물품",
+            "부가세",
+            "포인트",
+            "적립",
+        ]
+
+        if any(
+            keyword.replace(" ", "") in lower_nospace
+            for keyword in item_section_end_keywords
+        ):
+            break_line_idx = i
+            break
+
         if lower.strip() in {
             "total",
             "qty item",
@@ -1535,6 +1795,12 @@ def extract_items(
         if is_noise_line(
             stripped
         ):
+            continue
+
+        if is_identifier_line(
+            stripped
+        ):
+            current_item_name = None
             continue
 
         if is_discount_line(
@@ -1816,6 +2082,7 @@ def extract_items(
             if (
                 is_noise_line(s)
                 or is_discount_line(s)
+                or is_identifier_line(s)
             ):
                 continue
 
@@ -1917,6 +2184,58 @@ def parse_receipt_text(
         cleaned
     )
 
+    normal_items = extract_items(
+        cleaned,
+        total_amount,
+    )
+
+    column_items = extract_column_items(
+        cleaned,
+        total_amount,
+    )
+
+    # -------------------------------------------------------------
+    # 일반 파서 / 컬럼 파서 결과 선택
+    # -------------------------------------------------------------
+
+    items = normal_items
+
+    if column_items:
+
+        # 일반 파서 결과가 없으면 컬럼 파서 사용
+        if not normal_items:
+            items = column_items
+
+        # 컬럼 파서가 더 많은 정상 품목을 복구한 경우
+        elif len(column_items) > len(normal_items):
+            items = column_items
+
+        # 일반 파서 결과에 비상품 의심 항목이 있으면
+        # 컬럼 파서를 우선
+        else:
+
+            suspicious_names = [
+                "세물품가",
+                "청구액",
+                "잔여",
+                "포인트",
+                "승인번호",
+            ]
+
+            has_suspicious = any(
+                any(
+                    keyword in item.get(
+                        "name",
+                        "",
+                    )
+                    for keyword in suspicious_names
+                )
+                for item in normal_items
+            )
+
+            if has_suspicious:
+                items = column_items
+
     return {
         "merchant_name":
             extract_merchant_name(
@@ -1937,8 +2256,5 @@ def parse_receipt_text(
             total_amount,
 
         "items":
-            extract_items(
-                cleaned,
-                total_amount,
-            ),
+            items,
     }
