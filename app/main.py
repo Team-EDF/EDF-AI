@@ -14,6 +14,10 @@ from app.api.routes import (
 from app.services.rag_index_service import build_rag_index
 from app.services.classifier import MerchantClassifier
 
+# ChatHistory는 앱 어디서도 import되지 않으면 Base.metadata에
+# 등록되지 않으므로 create_all() 실행 전에 import해야 한다.
+from app.models.chat_history import ChatHistory  # noqa: F401
+
 
 # ============================================================
 # DB 테이블 생성

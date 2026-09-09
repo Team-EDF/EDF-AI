@@ -1,3 +1,4 @@
+import json
 import os
 from collections import defaultdict
 
@@ -77,17 +78,31 @@ class FeedbackService:
         conn,
     ) -> dict | None:
         """
-        하나의 record_id를 기준으로
-        영수증 + 품목 + 카테고리 정보를 조회한다.
+        record_id의 소비기록 및 품목정보를 조회하고
+        피드백 생성용 summary로 변환한다.
+
+        # [수정] 원래는 consumption_records.merchant_name/payment_location과
+        # 별도 items 테이블을 JOIN해서 읽었으나, 실제로 배포된 테이블은
+        # 백엔드(RecordConfirmService/ConsumptionRecord 엔티티) 기준이라
+        # 그 컬럼/테이블이 존재하지 않아 매번 500 에러가 났다.
+        # 백엔드는 품목·카테고리 분류 결과를 정규화하지 않고
+        # AI의 /ocr/classify 응답(ClassifyResponse) 전체를
+        # consumption_records.ocr_data에 JSON 문자열로 그대로 저장하므로,
+        # 여기서도 items 테이블 대신 ocr_data JSON을 파싱해서 사용한다.
         """
 
-        with conn.cursor() as cursor:
+        cursor = conn.cursor()
+
+        try:
+            # =====================================================
+            # 소비기록 조회 (ocr_data JSON에 품목/카테고리 정보 포함)
+            # =====================================================
+
             cursor.execute(
                 """
                 SELECT
                     record_id,
-                    merchant_name,
-                    payment_location,
+                    ocr_data,
                     record_date,
                     total_amount,
                     total_carbon_kg
@@ -104,75 +119,122 @@ class FeedbackService:
 
             (
                 db_record_id,
-                merchant_name,
-                payment_location,
+                ocr_data,
                 record_date,
                 total_amount,
                 total_carbon_kg,
             ) = record
 
-            cursor.execute(
-                """
-                SELECT
-                    i.item_id,
-                    i.source_msg,
-                    i.amount,
-                    i.main_category_id,
-                    mc.main_name,
-                    i.middle_category_id,
-                    mid.middle_name,
-                    i.classify_stage,
-                    i.carbon_kg
-                FROM items i
-                LEFT JOIN main_category mc
-                    ON i.main_category_id = mc.main_category_id
-                LEFT JOIN middle_category mid
-                    ON i.middle_category_id = mid.middle_category_id
-                WHERE i.record_id = %s
-                ORDER BY i.item_id ASC
-                """,
-                (record_id,),
-            )
+        finally:
+            cursor.close()
 
-            item_rows = cursor.fetchall()
+        # [수정] ClassifyResponse가 저장된 ocr_data JSON 파싱
+        parsed = json.loads(ocr_data) if ocr_data else {}
+
+        merchant_name = parsed.get("merchant_name")
+        payment_location = parsed.get("payment_location")
+        item_results = parsed.get("item_results") or []
+        merchant_category = parsed.get("merchant_category")
+        merchant_carbon_kg = parsed.get("merchant_carbon_kg")
+
+        # =========================================================
+        # 카테고리별 합계 계산
+        # =========================================================
 
         category_carbon = defaultdict(float)
         category_amount = defaultdict(int)
 
         item_list = []
 
-        for row in item_rows:
-            (
-                item_id,
-                item_name,
-                amount,
-                main_category_id,
-                main_name,
-                middle_category_id,
-                middle_name,
-                classify_stage,
-                carbon_kg,
-            ) = row
+        # [수정] 품목별 분류 결과(item_results)가 있으면 품목 단위로 집계하고,
+        # 없으면(가맹점명만으로 분류된 경우) merchant_category로 대체한다.
+        # RecordConfirmService.confirmByRecordId()의 집계 로직과 동일하게 맞춤.
+        if item_results:
+            for index, item in enumerate(item_results):
+                category = item.get("category") or {}
 
-            amount_value = int(amount or 0)
-            carbon_value = float(carbon_kg or 0)
+                item_name = item.get("item_name")
+                amount_value = int(item.get("amount_krw") or 0)
+                carbon_value = float(item.get("carbon_kg") or 0.0)
 
-            category_name = main_name or "미분류"
+                main_category_id = category.get("main_category_id")
+                main_name = category.get("main_name")
+                middle_category_id = category.get("middle_category_id")
+                middle_name = category.get("middle_name")
+                classify_stage = category.get("classify_stage")
+
+                category_name = main_name if main_name else "미분류"
+
+                category_carbon[category_name] += carbon_value
+                category_amount[category_name] += amount_value
+
+                item_list.append(
+                    {
+                        "item_id":
+                            index,
+
+                        "item_name":
+                            item_name,
+
+                        "amount_krw":
+                            amount_value,
+
+                        "main_category_id":
+                            main_category_id,
+
+                        "main_name":
+                            main_name,
+
+                        "middle_category_id":
+                            middle_category_id,
+
+                        "middle_name":
+                            middle_name,
+
+                        "classify_stage":
+                            classify_stage,
+
+                        "carbon_kg":
+                            carbon_value,
+                    }
+                )
+        elif merchant_category:
+            main_name = merchant_category.get("main_name")
+            category_name = main_name if main_name else "미분류"
+            carbon_value = float(merchant_carbon_kg or 0.0)
+            amount_value = int(total_amount or 0)
 
             category_carbon[category_name] += carbon_value
             category_amount[category_name] += amount_value
 
             item_list.append(
                 {
-                    "item_id": item_id,
-                    "item_name": item_name,
-                    "amount_krw": amount_value,
-                    "main_category_id": main_category_id,
-                    "main_name": main_name,
-                    "middle_category_id": middle_category_id,
-                    "middle_name": middle_name,
-                    "classify_stage": classify_stage,
-                    "carbon_kg": carbon_value,
+                    "item_id":
+                        0,
+
+                    "item_name":
+                        merchant_name,
+
+                    "amount_krw":
+                        amount_value,
+
+                    "main_category_id":
+                        merchant_category.get("main_category_id"),
+
+                    "main_name":
+                        main_name,
+
+                    "middle_category_id":
+                        merchant_category.get("middle_category_id"),
+
+                    "middle_name":
+                        merchant_category.get("middle_name"),
+
+                    "classify_stage":
+                        merchant_category.get("classify_stage"),
+
+                    "carbon_kg":
+                        carbon_value,
                 }
             )
 
