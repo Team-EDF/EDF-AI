@@ -66,9 +66,12 @@ class RecordService:
         )
 
         total_amount = (
-            sum(item.amount_krw for item in request.items)
-            if request.items
-            else (request.total_amount_krw or 0)
+            request.total_amount_krw
+            if request.total_amount_krw is not None
+            else sum(
+                item.amount_krw
+                for item in (request.items or [])
+            )
         )
 
         own_conn = conn is None

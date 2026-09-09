@@ -9,6 +9,12 @@ EMBEDDING_MODEL = (
     "paraphrase-multilingual-MiniLM-L12-v2"
 )
 
+VALID_CATEGORIES = {
+    "cafe",
+    "food",
+    "echo_guide",
+}
+
 
 # ============================================================
 # Embedding
@@ -57,21 +63,10 @@ def is_noise_chunk(
     if not text:
         return True
 
-    normalized = (
-        text.strip()
-        .lower()
-    )
-
-    # --------------------------------------------------------
-    # 너무 짧은 chunk 제외
-    # --------------------------------------------------------
+    normalized = text.strip().lower()
 
     if len(normalized) < 80:
         return True
-
-    # --------------------------------------------------------
-    # 목차 / 참고문헌 관련 키워드
-    # --------------------------------------------------------
 
     noise_keywords = [
         "references",
@@ -85,10 +80,6 @@ def is_noise_chunk(
         "표 목차",
         "부록",
     ]
-
-    # --------------------------------------------------------
-    # 참고문헌 페이지에서 자주 등장하는 신호
-    # --------------------------------------------------------
 
     reference_signals = [
         "doi.org",
@@ -108,17 +99,8 @@ def is_noise_chunk(
         for signal in reference_signals
     )
 
-    # --------------------------------------------------------
-    # 명확한 목차 / 참고문헌 chunk
-    # --------------------------------------------------------
-
     if noise_keyword_count >= 1:
         return True
-
-    # --------------------------------------------------------
-    # URL / DOI 등이 과도하게 반복되면
-    # 참고문헌일 가능성이 높음
-    # --------------------------------------------------------
 
     if reference_signal_count >= 5:
         return True
@@ -134,21 +116,11 @@ def detect_query_category(
     query: str,
 ) -> str | None:
     """
-    사용자 질문을 분석해
+    query의 키워드를 분석해
     우선 검색할 RAG category를 결정한다.
-
-    반환:
-        cafe
-        food
-        echo_guide
-        None
     """
 
     normalized = query.lower()
-
-    # ========================================================
-    # Cafe Keywords
-    # ========================================================
 
     cafe_keywords = [
         "카페",
@@ -166,7 +138,6 @@ def detect_query_category(
         "에스프레소",
         "라떼",
         "카푸치노",
-
         "coffee",
         "cafe",
         "tumbler",
@@ -178,10 +149,6 @@ def detect_query_category(
         "latte",
         "cappuccino",
     ]
-
-    # ========================================================
-    # Food Keywords
-    # ========================================================
 
     food_keywords = [
         "식품",
@@ -195,6 +162,11 @@ def detect_query_category(
         "쇠고기",
         "돼지고기",
         "닭고기",
+        "햄",
+        "소시지",
+        "가공육",
+        "축산물",
+        "농축산물",
         "채식",
         "비건",
         "콩",
@@ -212,7 +184,6 @@ def detect_query_category(
         "식품폐기",
         "배달음식",
         "배달 음식",
-
         "food",
         "diet",
         "meat",
@@ -228,10 +199,6 @@ def detect_query_category(
         "milk",
         "food waste",
     ]
-
-    # ========================================================
-    # Eco Guide Keywords
-    # ========================================================
 
     eco_keywords = [
         "일상생활",
@@ -259,7 +226,6 @@ def detect_query_category(
         "재사용",
         "중고",
         "절약",
-
         "lifestyle",
         "household",
         "transport",
@@ -269,10 +235,6 @@ def detect_query_category(
         "carbon reduction",
     ]
 
-    # ========================================================
-    # Category Score
-    # ========================================================
-
     scores = {
         "cafe": 0,
         "food": 0,
@@ -280,33 +242,23 @@ def detect_query_category(
     }
 
     for keyword in cafe_keywords:
-
         if keyword in normalized:
             scores["cafe"] += 1
 
     for keyword in food_keywords:
-
         if keyword in normalized:
             scores["food"] += 1
 
     for keyword in eco_keywords:
-
         if keyword in normalized:
             scores["echo_guide"] += 1
-
-    # ========================================================
-    # 가장 높은 점수 category
-    # ========================================================
 
     highest_category = max(
         scores,
         key=scores.get,
     )
 
-    if scores[
-        highest_category
-    ] == 0:
-
+    if scores[highest_category] == 0:
         return None
 
     return highest_category
@@ -333,57 +285,33 @@ def filter_documents(
     filtered_docs = []
 
     used_sources = set()
-
     used_source_pages = set()
 
     for doc in docs:
-
-        # ====================================================
-        # Noise 제거
-        # ====================================================
 
         if is_noise_chunk(
             doc.page_content
         ):
             continue
 
-        source = (
-            doc.metadata.get(
-                "source"
-            )
+        source = doc.metadata.get(
+            "source"
         )
 
-        page = (
-            doc.metadata.get(
-                "page"
-            )
+        page = doc.metadata.get(
+            "page"
         )
-
-        # ====================================================
-        # 동일 source + page 제거
-        # ====================================================
 
         source_page_key = (
             source,
             page,
         )
 
-        if (
-            source_page_key
-            in used_source_pages
-        ):
+        if source_page_key in used_source_pages:
             continue
-
-        # ====================================================
-        # 동일 PDF 반복 제거
-        # ====================================================
 
         if source in used_sources:
             continue
-
-        # ====================================================
-        # 정상 문서 등록
-        # ====================================================
 
         used_source_pages.add(
             source_page_key
@@ -397,10 +325,7 @@ def filter_documents(
             doc
         )
 
-        if len(
-            filtered_docs
-        ) >= k:
-
+        if len(filtered_docs) >= k:
             break
 
     return filtered_docs
@@ -413,38 +338,38 @@ def filter_documents(
 def search_rag(
     query: str,
     k: int = 5,
+    preferred_category: str | None = None,
 ):
     """
-    사용자 질문과 유사한
-    RAG 문서를 검색한다.
+    사용자 질문과 유사한 RAG 문서를 검색한다.
 
-    처리 과정:
+    preferred_category가 전달되면:
+        해당 category를 최우선으로 사용한다.
 
-    1. 질문 category 판별
-    2. 해당 category 내부에서 검색
-    3. noise 제거
-    4. 동일 PDF 반복 제거
-    5. category 판별 실패 시에만 전체 검색
-    6. 최종 결과 반환
+    preferred_category가 없으면:
+        기존 키워드 기반 category 판별을 사용한다.
 
-    중요:
-    category 검색 결과가 k개보다 적더라도
-    다른 category의 관련 없는 문서로
-    억지로 채우지 않는다.
+    category가 결정되면:
+        해당 category 내부에서만 검색한다.
     """
 
-    vectorstore = (
-        get_vector_store()
-    )
+    vectorstore = get_vector_store()
 
     # ========================================================
-    # Query Category
+    # Category 결정
     # ========================================================
 
-    preferred_category = (
-        detect_query_category(
+    if preferred_category not in VALID_CATEGORIES:
+        preferred_category = None
+
+    if preferred_category is None:
+        preferred_category = detect_query_category(
             query
         )
+
+    print(
+        "[RAG] "
+        f"preferred_category={preferred_category}"
     )
 
     # ========================================================
@@ -457,12 +382,10 @@ def search_rag(
     )
 
     # ========================================================
-    # Category가 판단된 경우
-    # 해당 category에서만 검색
+    # Category 검색
     # ========================================================
 
     if preferred_category:
-
         docs = (
             vectorstore
             .similarity_search(
@@ -475,13 +398,7 @@ def search_rag(
             )
         )
 
-    # ========================================================
-    # Category를 판단할 수 없는 질문
-    # 전체 RAG 검색
-    # ========================================================
-
     else:
-
         docs = (
             vectorstore
             .similarity_search(
@@ -494,11 +411,9 @@ def search_rag(
     # Noise + Duplicate 제거
     # ========================================================
 
-    final_docs = (
-        filter_documents(
-            docs=docs,
-            k=k,
-        )
+    final_docs = filter_documents(
+        docs=docs,
+        k=k,
     )
 
     # ========================================================
@@ -506,41 +421,27 @@ def search_rag(
     # ========================================================
 
     context_parts = []
-
     sources = []
 
     for idx, doc in enumerate(
         final_docs,
         start=1,
     ):
-
-        source = (
-            doc.metadata.get(
-                "source"
-            )
+        source = doc.metadata.get(
+            "source"
         )
 
-        page = (
-            doc.metadata.get(
-                "page"
-            )
+        page = doc.metadata.get(
+            "page"
         )
 
-        doc_type = (
-            doc.metadata.get(
-                "type"
-            )
+        doc_type = doc.metadata.get(
+            "type"
         )
 
-        category = (
-            doc.metadata.get(
-                "category"
-            )
+        category = doc.metadata.get(
+            "category"
         )
-
-        # ----------------------------------------------------
-        # LLM에게 전달할 Context
-        # ----------------------------------------------------
 
         context_parts.append(
             f"[문서 {idx}]\n"
@@ -551,42 +452,22 @@ def search_rag(
             f"{doc.page_content}"
         )
 
-        # ----------------------------------------------------
-        # API에서 반환할 Source
-        # ----------------------------------------------------
-
         sources.append(
             {
-                "source":
-                    source,
-
-                "page":
-                    page,
-
-                "type":
-                    doc_type,
-
-                "category":
-                    category,
-
+                "source": source,
+                "page": page,
+                "type": doc_type,
+                "category": category,
                 "preview":
                     doc.page_content[:200],
             }
         )
 
-    # ========================================================
-    # 최종 결과
-    # ========================================================
-
     return {
         "query_category":
             preferred_category,
-
         "context":
-            "\n\n".join(
-                context_parts
-            ),
-
+            "\n\n".join(context_parts),
         "sources":
             sources,
     }
@@ -599,6 +480,7 @@ def search_rag(
 def get_rag_context(
     query: str,
     k: int = 5,
+    preferred_category: str | None = None,
 ) -> str:
     """
     다른 서비스에서 사용할 수 있도록
@@ -608,8 +490,7 @@ def get_rag_context(
     result = search_rag(
         query=query,
         k=k,
+        preferred_category=preferred_category,
     )
 
-    return result[
-        "context"
-    ]
+    return result["context"]
