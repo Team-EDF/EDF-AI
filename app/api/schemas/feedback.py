@@ -4,10 +4,25 @@ from pydantic import BaseModel, Field
 
 
 class FeedbackChatRequest(BaseModel):
-    record_id: int = Field(
+    user_id: int = Field(
         ...,
         gt=0,
-        description="OCR 처리 후 생성된 소비 기록 ID",
+        description="사용자 ID",
+    )
+
+    conversation_id: int | None = Field(
+        default=None,
+        gt=0,
+        description=(
+            "대화방 ID. "
+            "없으면 새로운 대화방을 생성합니다."
+        ),
+    )
+
+    record_id: int | None = Field(
+        default=None,
+        gt=0,
+        description="특정 소비 기록 ID (선택)",
     )
 
     message: str = Field(
@@ -20,10 +35,19 @@ class FeedbackChatRequest(BaseModel):
 
 class FeedbackChatResponse(BaseModel):
     chat_id: int | None = None
-    record_id: int
+
+    conversation_id: int
+
+    user_id: int
+
+    record_id: int | None = None
+
     message: str
+
     feedback: str
+
     total_carbon_kg: float | None = None
+
     highest_carbon_category: str | None = None
 
     rag_category: str | None = None

@@ -6,19 +6,20 @@ from app.services.rag_service import (
 def retrieve_eco_documents(
     query: str,
     k: int = 3,
+    preferred_category: str | None = None,
 ) -> dict:
     """
     친환경 피드백에 사용할 RAG 문서를 검색한다.
 
+    preferred_category:
+        cafe
+        food
+        echo_guide
+
+    지정된 경우 해당 category를 우선 검색한다.
+
     실제 Chroma 접근 및 embedding 처리는
     rag_service.py가 담당한다.
-
-    반환:
-    {
-        "query_category": str | None,
-        "context": str,
-        "sources": list
-    }
     """
 
     if not query or not query.strip():
@@ -31,4 +32,5 @@ def retrieve_eco_documents(
     return search_rag(
         query=query,
         k=k,
+        preferred_category=preferred_category,
     )

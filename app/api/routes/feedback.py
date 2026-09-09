@@ -32,6 +32,8 @@ async def feedback_chat(
 
     try:
         result = feedback_service.chat(
+            user_id=request.user_id,
+            conversation_id=request.conversation_id,
             record_id=request.record_id,
             user_message=request.message,
             conn=conn,
