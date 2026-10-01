@@ -4,6 +4,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.database import Base, engine
+from app.db_migrations import run_db_migrations
 
 from app.api.routes import (
     feedback,
@@ -20,10 +21,16 @@ from app.models.chat_history import ChatHistory  # noqa: F401
 
 
 # ============================================================
-# DB 테이블 생성
+# DB 테이블 생성 및 마이그레이션
 # ============================================================
 
+# SQLAlchemy 모델에 정의된 테이블 중
+# 아직 DB에 없는 테이블을 생성한다.
 Base.metadata.create_all(bind=engine)
+
+# 기존 테이블의 컬럼/FK/인덱스 등
+# create_all()이 처리하지 못하는 스키마 변경을 자동 적용한다.
+run_db_migrations(engine)
 
 
 # ============================================================
