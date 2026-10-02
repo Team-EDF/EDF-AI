@@ -5,6 +5,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.database import Base, engine
 from app.db_migrations import run_db_migrations
+from app.db_seed import seed_reference_data
 
 from app.api.routes import (
     feedback,
@@ -139,8 +140,11 @@ def warm_up_models():
     startup 시점의 메모리 peak가 커진다.
 
     RAG vector store는 실제 RAG 요청이 들어올 때 lazy-load 한다.
+
+    로드한 SBERT로 DB 초기화 시 비어 있는 카테고리/임베딩 테이블도 채운다.
     """
-    MerchantClassifier._get_model()
+    model = MerchantClassifier._get_model()
+    seed_reference_data(model)
 
 
 # ============================================================
