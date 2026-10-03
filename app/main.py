@@ -11,6 +11,8 @@ from app.api.routes import (
     feedback,
     merchant,
     ocr,
+    onboarding,
+    profile,
 )
 
 from app.services.rag_index_service import build_rag_index
@@ -84,6 +86,22 @@ app.include_router(
     ocr.router,
     prefix="/api",
     tags=["ocr"],
+)
+
+
+# 온보딩 설문 -> 추천 목표 계산 (데모/내부 테스트 전용, 공식 계약 아님)
+app.include_router(
+    onboarding.router,
+    prefix="/api",
+    tags=["onboarding-demo"],
+)
+
+
+# Green Profile (설문 -> 영역별 레벨 + 실천 성향 + 추천 목표)
+app.include_router(
+    profile.router,
+    prefix="/api",
+    tags=["profile"],
 )
 
 
