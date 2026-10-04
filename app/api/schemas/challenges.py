@@ -24,3 +24,42 @@ class CatalogChallenge(BaseModel):
 class CatalogResponse(BaseModel):
     catalog_version: str
     challenges: list[CatalogChallenge]
+
+
+# ---------------------------------------------------------------- 추천 (POST /challenges/recommend)
+
+class RecommendArea(BaseModel):
+    key: str                     # "move" | "food" | "cafe" | "shop"
+    level: int                   # 1~5
+
+
+class RecommendPersona(BaseModel):
+    type_code: Optional[str] = None
+    type_name: Optional[str] = None
+    tagline: Optional[str] = None
+    preferred_difficulty: Optional[int] = None   # 없으면 가장 쉬운 1로 처리
+
+
+class RecommendProfile(BaseModel):
+    """/api/profile 응답을 그대로 넘겨도 된다 (모르는 필드는 무시)."""
+    source: Optional[str] = None
+    areas: list[RecommendArea]
+    persona: Optional[RecommendPersona] = None
+
+
+class RecommendRequest(BaseModel):
+    profile: Optional[RecommendProfile] = None
+    user_id: Optional[int] = None                       # 실데이터 전환(2단계) 이후 사용
+    exclude_challenge_ids: list[str] = []               # 이미 부여/완료한 챌린지
+
+
+class RecommendedChallenge(CatalogChallenge):
+    slot: int                    # 추천 순서 1~3 (1번이 가장 줄일 여지가 큰 영역)
+    reason: str                  # 추천 이유 문구 (LLM 또는 고정 문구)
+    reason_source: str           # "llm" | "fallback"
+
+
+class RecommendResponse(BaseModel):
+    source: str                  # "survey"
+    intro: str                   # 예: "AI가 생활패턴을 분석했어요."
+    challenges: list[RecommendedChallenge]
