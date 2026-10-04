@@ -5,8 +5,12 @@
       -> 코드의 규칙(judge)이 통과/실패를 결정 -> 영수증 지문(중복 방지용) 반환.
 
 설계 원칙
-- AI는 사진에서 사실(텀블러가 보이는지, 어떤 인증 마크가 보이는지, 영수증의 가맹점·날짜·금액·할인 줄)을
+- AI는 사진 한 장 한 장에서 사실(텀블러가 보이는지, 어떤 인증 마크가 보이는지, 영수증의 가맹점·날짜·금액·할인 줄)을
   읽기만 한다. 통과 여부는 이 파일의 규칙이 정해서, 같은 읽기 결과면 항상 같은 판정이 나온다.
+- **한 사진 안에서 조건이 모두 맞아야 한다.** 텀블러 사진 따로, 영수증 사진 따로 내면 서로 상관없는 두 장을
+  합쳐 통과시킬 수 있어서(예: 집에서 찍은 텀블러 + 일회용 컵으로 산 영수증) 사진마다 따로 평가하고,
+  텀블러/인증 마크와 영수증이 같은 사진에 함께 있는 경우만 인정한다. 영수증 자체에 개인컵 할인·에코별 줄이
+  찍혀 있으면(매장 POS 기록) 영수증만으로도 인정한다.
 - 사진은 저장하지 않는다. 판정과 영수증 지문(해시)만 쓴다.
 - 영수증 지문은 (날짜, 시각, 금액)의 해시다. 같은 영수증을 다시 찍어도(촬영 각도·OCR 오차가 달라도)
   날짜·시각·금액은 같아서 중복으로 잡힌다. 지문의 중복 검사는 BE가 한다 (DB 유니크).
@@ -36,7 +40,11 @@ VERIFY_TIMEOUT_MS = 25_000          # 비전 호출은 사진 때문에 문구 �
 MAX_IMAGES = 3
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
 MAX_IMAGE_SIDE = 1600               # 긴 변 기준. 크게 보내도 정확도는 거의 같고 느려지기만 한다
-RECEIPT_MAX_AGE_DAYS = 1            # 오늘 또는 어제 영수증만 인정
+RECEIPT_MAX_AGE_HOURS = 24          # 결제 시각이 읽히면 지금부터 24시간 안의 영수증만 인정 (미래 시각은 15분까지만 허용)
+RECEIPT_FUTURE_TOLERANCE_MIN = 15
+RECEIPT_MAX_AGE_DAYS = 1            # 결제 시각을 못 읽었을 때는 날짜로만: 오늘 또는 어제
+# 영수증의 개인컵 할인·에코별 줄만 있고 텀블러가 사진에 없어도 인정할지 (매장 기록이라 강한 증거). false면 항상 같은 사진 필요
+ALLOW_RECEIPT_DISCOUNT_ONLY = os.getenv("CHALLENGE_ALLOW_DISCOUNT_ONLY", "true").strip().lower() != "false"
 
 KINDS = ("TUMBLER", "LOW_CARBON")
 
@@ -83,13 +91,18 @@ class ReceiptInfo(BaseModel):
     discount_lines: list[str] = Field(default=[], description="할인·적립·쿠폰 줄을 영수증에 찍힌 그대로")
 
 
-class VisionResult(BaseModel):
-    tumbler_visible: bool = Field(description="다회용 텀블러/개인 컵이 사진에 보이면 true. 일회용 컵은 false")
+class ImageFinding(BaseModel):
+    """사진 한 장에서 읽은 내용. 다른 사진에 있는 것은 여기에 섞지 않는다."""
+    tumbler_visible: bool = Field(description="이 사진에 다회용 텀블러/개인 컵이 보이면 true. 일회용 컵은 false")
     marks: list[MarkName] = []
     receipt: ReceiptInfo
     is_cafe_or_beverage_shop: bool = False
     looks_like_screen_photo: bool = False
     looks_edited: bool = False
+
+
+class VisionResult(BaseModel):
+    images: list[ImageFinding] = Field(description="보낸 사진 순서대로 사진 한 장당 하나")
     notes: Optional[str] = None
 
 
@@ -174,34 +187,36 @@ def warm_up() -> None:
         logger.warning("사진 인증 비전 warm-up 실패 (요청 때 다시 시도): %s: %s", type(e).__name__, str(e)[:100])
 
 
-def build_prompt(kind: str, today: date) -> str:
-    """사진에서 "보이는 사실"만 읽게 하는 프롬프트. 통과 여부는 묻지 않는다."""
+def build_prompt(kind: str, today: date, count: int = 1) -> str:
+    """사진마다 따로 "보이는 사실"만 읽게 하는 프롬프트. 통과 여부는 묻지 않는다."""
     kind_text = {
-        "TUMBLER": "이 사진들은 '카페에서 텀블러를 썼다'는 인증용이다. 텀블러와 카페 영수증이 함께 있거나 따로 찍혀 있다.",
-        "LOW_CARBON": "이 사진들은 '저탄소 인증 마크가 붙은 식품을 샀다'는 인증용이다. 인증 마크가 붙은 상품과 영수증이 함께 있거나 따로 찍혀 있다.",
+        "TUMBLER": "이 사진들은 '카페에서 텀블러를 썼다'는 인증용이다.",
+        "LOW_CARBON": "이 사진들은 '저탄소 인증 마크가 붙은 식품을 샀다'는 인증용이다.",
     }[kind]
     return f"""너는 영수증/상품 사진 판독기다. {kind_text}
+사진 {count}장이 순서대로 주어진다. **사진마다 따로** 판독해서 images 목록에 같은 순서로 하나씩 넣는다.
+어떤 사진에 없는 것은 다른 사진에 있어도 그 사진에서는 없는 것으로 쓴다 (사진끼리 내용을 합치지 않는다).
 사진에 실제로 보이는 것만 읽고, 보이지 않는 것은 추측하지 않는다. 오늘 날짜는 {today.isoformat()}이다.
 
-읽을 항목:
-1. tumbler_visible: 다회용 텀블러/개인 컵(뚜껑 있는 보온병형, 머그, 개인 물병 등)이 보이면 true.
-   카페에서 주는 일회용 종이컵/플라스틱컵은 false.
-2. marks: 사진 속 상품 포장에 보이는 인증 마크를 모두 고른다 (없으면 빈 목록).
+사진 한 장마다 읽을 항목:
+1. tumbler_visible: 이 사진에 다회용 텀블러/개인 컵(뚜껑 있는 보온병형, 머그, 개인 물병 등)이 보이면 true.
+   카페에서 주는 일회용 종이컵/플라스틱컵은 false. 컵 그림이나 사진 속 사진이 아니라 실물이 찍혀 있어야 한다.
+2. marks: 이 사진 속 상품 포장에 보이는 인증 마크를 모두 고른다 (없으면 빈 목록).
    - LOW_CARBON_PRODUCT: 환경부 '탄소성적표지'에서 '저탄소제품' 단계를 나타내는 마크(저탄소 글자가 있는 마크)
    - LOW_CARBON_AGRI: 농림축산식품부 '저탄소 농축산물 인증' 마크
    - LOW_CARBON_LIVESTOCK: '저탄소 축산물 인증' 마크(저탄소 세 글자 표시)
    - CARBON_FOOTPRINT_ONLY: 탄소 배출량(CO2e g)만 적힌 '탄소성적표지' 1단계 마크 (저탄소 글자가 없는 것)
    - OTHER_ECO: 친환경/유기농/무농약/무항생제 같은 다른 인증 마크
    마크의 글자나 모양이 흐려서 확실하지 않으면 고르지 않는다.
-3. receipt: 영수증이 사진에 있으면 읽는다.
-   - readable: 가맹점명, 결제 날짜, 결제 금액을 모두 읽을 수 있으면 true, 영수증이 없거나 흐리면 false
+3. receipt: 이 사진에 영수증이 있으면 읽는다.
+   - readable: 이 사진에서 가맹점명, 결제 날짜, 결제 금액을 모두 읽을 수 있으면 true, 영수증이 없거나 흐리면 false
    - payment_date는 YYYY-MM-DD, payment_time은 HH:MM(24시간), total_amount는 원 단위 정수
    - discount_lines: 영수증의 할인/적립/쿠폰 줄을 찍힌 그대로 (예: "개인컵 할인 -400")
-   - 앱 화면에 띄운 전자영수증도 영수증이다.
-4. is_cafe_or_beverage_shop: 가맹점이 카페/커피/음료 전문점이면 true.
-5. looks_like_screen_photo: 영수증이 모니터나 휴대폰 화면을 찍은 것처럼 보이면 true (참고용).
+   - 앱 화면에 띄운 전자영수증이나 그 캡처도 영수증이다.
+4. is_cafe_or_beverage_shop: 이 사진 영수증의 가맹점이 카페/커피/음료 전문점이면 true.
+5. looks_like_screen_photo: 이 사진이 모니터나 휴대폰 화면을 찍은 것처럼 보이면 true (참고용).
 6. looks_edited: 숫자·글자 위조나 합성의 뚜렷한 흔적(글꼴 불일치, 어색한 정렬 등)이 보이면 true. 확실할 때만 true.
-7. notes: 판독하기 어려웠던 점이 있으면 짧게(없으면 null).
+notes: 판독하기 어려웠던 점이 있으면 짧게(없으면 null).
 
 JSON 하나만 출력한다."""
 
@@ -214,7 +229,7 @@ def analyze_images(images: list[bytes], kind: str, today: date) -> VisionResult:
         parts = [types.Part.from_bytes(data=data, mime_type="image/jpeg") for data in images]
         response = _get_client().models.generate_content(
             model=VERIFY_MODEL,
-            contents=[*parts, build_prompt(kind, today)],
+            contents=[*parts, build_prompt(kind, today, len(images))],
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
                 response_schema=VisionResult,
@@ -261,8 +276,8 @@ def has_tumbler_discount(receipt: ReceiptInfo) -> bool:
     return any(keyword in lines for keyword in TUMBLER_DISCOUNT_KEYWORDS)
 
 
-def _result(passed: bool, code: str, message: str, kind: str, vision: VisionResult | None = None, **extra) -> dict:
-    receipt = vision.receipt if vision else None
+def _result(passed: bool, code: str, message: str, kind: str, finding: ImageFinding | None = None, **extra) -> dict:
+    receipt = finding.receipt if finding else None
     return {
         "passed": passed,
         "code": code,
@@ -276,66 +291,135 @@ def _result(passed: bool, code: str, message: str, kind: str, vision: VisionResu
             "fingerprint": make_fingerprint(receipt),
         } if receipt else None,
         "evidence": extra.pop("evidence", None),
-        "marks": [m for m in (vision.marks if vision else []) if m in ACCEPTED_MARKS],
+        "marks": [m for m in (finding.marks if finding else []) if m in ACCEPTED_MARKS],
         **extra,
     }
+
+
+def check_freshness(receipt: ReceiptInfo, now: datetime) -> str | None:
+    """
+    영수증이 충분히 최근인지 본다. 문제가 있으면 실패 코드(RECEIPT_DATE / RECEIPT_TOO_OLD), 괜찮으면 None.
+    결제 시각이 읽히면 지금부터 24시간 안(미래는 15분까지), 못 읽었으면 날짜로만 오늘/어제.
+    """
+    try:
+        paid_on = date.fromisoformat(receipt.payment_date)
+    except (TypeError, ValueError):
+        return "RECEIPT_DATE"
+    now_kst = now.astimezone(KST)
+
+    paid_time = None
+    if receipt.payment_time:
+        try:
+            parts = receipt.payment_time.strip().split(":")
+            paid_time = datetime(paid_on.year, paid_on.month, paid_on.day, int(parts[0]), int(parts[1][:2]), tzinfo=KST)
+        except (ValueError, IndexError):
+            paid_time = None
+    if paid_time is not None:
+        age = now_kst - paid_time
+        if age < -timedelta(minutes=RECEIPT_FUTURE_TOLERANCE_MIN) or age > timedelta(hours=RECEIPT_MAX_AGE_HOURS):
+            return "RECEIPT_TOO_OLD"
+        return None
+    today = now_kst.date()
+    if paid_on > today or paid_on < today - timedelta(days=RECEIPT_MAX_AGE_DAYS):
+        return "RECEIPT_TOO_OLD"
+    return None
+
+
+_TOO_OLD_MESSAGE = "결제한 지 24시간이 안 된 영수증만 인증할 수 있어요 (결제 시각이 안 보이면 오늘·어제 영수증)."
+
+
+def _evaluate_image(kind: str, finding: ImageFinding, now: datetime) -> dict:
+    """사진 한 장만 보고 통과/실패를 정한다 (다른 사진의 내용은 섞지 않는다)."""
+    receipt = finding.receipt
+
+    # 1) 이 사진에서 영수증을 읽을 수 있는가 (날짜와 금액이 있어야 중복 방지 지문을 만들 수 있다)
+    if not receipt.readable or make_fingerprint(receipt) is None:
+        return _result(False, "RECEIPT_UNREADABLE",
+                       "영수증의 가맹점·날짜·금액이 잘 보이게 가까이서 다시 찍어 주세요.", kind, finding)
+
+    # 2) 영수증이 최근인가
+    problem = check_freshness(receipt, now)
+    if problem == "RECEIPT_DATE":
+        return _result(False, "RECEIPT_DATE", "영수증 날짜를 읽지 못했어요. 날짜가 잘 보이게 다시 찍어 주세요.", kind, finding)
+    if problem == "RECEIPT_TOO_OLD":
+        return _result(False, "RECEIPT_TOO_OLD", _TOO_OLD_MESSAGE, kind, finding)
+
+    # 3) 편집 흔적이 뚜렷하면 거절
+    if finding.looks_edited:
+        return _result(False, "RECEIPT_EDITED", "편집된 것으로 보이는 영수증은 인증할 수 없어요.", kind, finding)
+
+    # 4) 종류별 조건 (이 사진 안에서)
+    if kind == "TUMBLER":
+        if not is_cafe(receipt, finding.is_cafe_or_beverage_shop):
+            return _result(False, "NOT_CAFE", "카페(음료점) 영수증이 아니에요. 카페 영수증과 함께 찍어 주세요.", kind, finding)
+        discount = has_tumbler_discount(receipt) and ALLOW_RECEIPT_DISCOUNT_ONLY
+        if not (finding.tumbler_visible or discount):
+            return _result(False, "NO_TUMBLER",
+                           "텀블러와 영수증을 한 사진에 같이 찍어 주세요. 영수증에 개인컵 할인·에코별이 찍혀 있으면 영수증만 찍어도 돼요.",
+                           kind, finding)
+        if finding.tumbler_visible and has_tumbler_discount(receipt):
+            evidence, how = "PHOTO_AND_RECEIPT", "텀블러와 영수증의 개인컵 할인 문구가 한 사진에서 확인됐어요."
+        elif finding.tumbler_visible:
+            evidence, how = "PHOTO", "텀블러와 카페 영수증이 한 사진에서 확인됐어요."
+        else:
+            evidence, how = "RECEIPT_DISCOUNT", "영수증의 개인컵 할인 문구로 확인됐어요."
+        return _result(True, "OK", f"인증 완료! {how}", kind, finding, evidence=evidence)
+
+    # LOW_CARBON
+    accepted = [m for m in finding.marks if m in ACCEPTED_MARKS]
+    if not accepted:
+        others = [NOT_ACCEPTED_MARKS[m] for m in finding.marks if m in NOT_ACCEPTED_MARKS]
+        hint = f" (보이는 마크: {', '.join(others)} — 저탄소 인증이 아니에요)" if others else ""
+        return _result(False, "NO_MARK",
+                       f"저탄소 인증 마크가 선명한 상품과 영수증을 한 사진에 같이 찍어 주세요.{hint}", kind, finding)
+    labels = ", ".join(ACCEPTED_MARKS[m] for m in accepted)
+    return _result(True, "OK", f"인증 완료! {labels} 마크와 영수증이 한 사진에서 확인됐어요.", kind, finding, evidence="MARK_AND_RECEIPT")
+
+
+# 사진마다 평가한 실패 중 사용자에게 알려 줄 것을 고르는 우선순위: 통과에 가장 가까운 실패(숫자가 작은 것)
+_FAILURE_RANK = {
+    "OK": 0,
+    "RECEIPT_TOO_OLD": 1, "RECEIPT_EDITED": 1, "NOT_CAFE": 1, "RECEIPT_DATE": 1,
+    "NO_TUMBLER": 2, "NO_MARK": 2,
+    "RECEIPT_UNREADABLE": 3,
+}
 
 
 def judge(kind: str, vision: VisionResult, now: datetime | None = None) -> dict:
     """
     읽은 결과로 통과/실패를 정한다. 같은 입력이면 항상 같은 결과.
+    사진마다 따로 평가해서, 한 사진이라도 모든 조건(텀블러/인증 마크 + 읽히는 최근 영수증)을 만족하면 통과한다.
     반환: {passed, code, message, kind, receipt{...,fingerprint}, evidence, marks}
-    실패 코드: RECEIPT_UNREADABLE, RECEIPT_DATE, RECEIPT_TOO_OLD, RECEIPT_EDITED, NOT_CAFE, NO_TUMBLER, NO_MARK
+    실패 코드: RECEIPT_UNREADABLE, RECEIPT_DATE, RECEIPT_TOO_OLD, RECEIPT_EDITED, NOT_CAFE, NO_TUMBLER, NO_MARK, SEPARATE_PHOTOS
     """
     if kind not in KINDS:
         raise ValueError(f"알 수 없는 인증 종류: {kind}")
     now = now or datetime.now(KST)
-    today = now.astimezone(KST).date()
-    receipt = vision.receipt
+    findings = vision.images
+    if not findings:
+        return _result(False, "RECEIPT_UNREADABLE", "사진을 읽지 못했어요. 다시 찍어 주세요.", kind)
 
-    # 1) 영수증을 읽을 수 있는가 (날짜와 금액이 있어야 중복 방지 지문을 만들 수 있다)
-    fingerprint = make_fingerprint(receipt)
-    if not receipt.readable or fingerprint is None:
-        return _result(False, "RECEIPT_UNREADABLE",
-                       "영수증의 가맹점·날짜·금액이 잘 보이게 다시 찍어 주세요.", kind, vision)
+    evaluations = [(finding, _evaluate_image(kind, finding, now)) for finding in findings]
+    for _, result in evaluations:
+        if result["passed"]:
+            return result
 
-    # 2) 영수증 날짜: 오늘 또는 어제
-    try:
-        paid_on = date.fromisoformat(receipt.payment_date)
-    except ValueError:
-        return _result(False, "RECEIPT_DATE", "영수증 날짜를 읽지 못했어요. 날짜가 잘 보이게 다시 찍어 주세요.", kind, vision)
-    if paid_on > today or paid_on < today - timedelta(days=RECEIPT_MAX_AGE_DAYS):
-        return _result(False, "RECEIPT_TOO_OLD",
-                       "오늘이나 어제 결제한 영수증만 인증할 수 있어요.", kind, vision)
+    # 모두 실패: 통과에 가장 가까운 사진의 사유를 알려 준다
+    best_finding, best = min(evaluations, key=lambda pair: _FAILURE_RANK.get(pair[1]["code"], 9))
 
-    # 3) 편집 흔적이 뚜렷하면 거절
-    if vision.looks_edited:
-        return _result(False, "RECEIPT_EDITED", "편집된 것으로 보이는 영수증은 인증할 수 없어요.", kind, vision)
-
-    # 4) 종류별 조건
-    if kind == "TUMBLER":
-        if not is_cafe(receipt, vision.is_cafe_or_beverage_shop):
-            return _result(False, "NOT_CAFE", "카페(음료점) 영수증이 아니에요. 카페 영수증과 함께 찍어 주세요.", kind, vision)
-        discount = has_tumbler_discount(receipt)
-        if not (vision.tumbler_visible or discount):
-            return _result(False, "NO_TUMBLER",
-                           "텀블러(다회용 컵)가 보이도록 찍어 주세요. 영수증에 개인컵 할인이 찍혀 있어도 인증돼요.", kind, vision)
-        if vision.tumbler_visible and discount:
-            evidence, how = "PHOTO_AND_RECEIPT", "텀블러 사진과 영수증의 개인컵 할인 문구가 모두 확인됐어요."
-        elif vision.tumbler_visible:
-            evidence, how = "PHOTO", "텀블러와 카페 영수증이 확인됐어요."
+    # 텀블러/마크와 영수증이 "서로 다른 사진"에 따로 있는 경우는 따로 안내한다
+    if best["code"] in ("NO_TUMBLER", "NO_MARK", "RECEIPT_UNREADABLE"):
+        if kind == "TUMBLER":
+            item_seen = any(f.tumbler_visible for f in findings)
         else:
-            evidence, how = "RECEIPT_DISCOUNT", "영수증의 개인컵 할인 문구로 확인됐어요."
-        return _result(True, "OK", f"인증 완료! {how}", kind, vision, evidence=evidence)
-
-    # LOW_CARBON
-    accepted = [m for m in vision.marks if m in ACCEPTED_MARKS]
-    if not accepted:
-        others = [NOT_ACCEPTED_MARKS[m] for m in vision.marks if m in NOT_ACCEPTED_MARKS]
-        hint = f" (보이는 마크: {', '.join(others)} — 저탄소 인증이 아니에요)" if others else ""
-        return _result(False, "NO_MARK", f"저탄소 인증 마크가 선명하게 보이도록 상품을 찍어 주세요.{hint}", kind, vision)
-    labels = ", ".join(ACCEPTED_MARKS[m] for m in accepted)
-    return _result(True, "OK", f"인증 완료! {labels} 마크와 영수증이 확인됐어요.", kind, vision, evidence="MARK_AND_RECEIPT")
+            item_seen = any(m in ACCEPTED_MARKS for f in findings for m in f.marks)
+        receipt_seen = any(f.receipt.readable and make_fingerprint(f.receipt) for f in findings)
+        if item_seen and receipt_seen:
+            what = "텀블러" if kind == "TUMBLER" else "인증 마크가 있는 상품"
+            return _result(False, "SEPARATE_PHOTOS",
+                           f"{what}와 영수증이 서로 다른 사진에 따로 있어요. 한 사진 안에 같이 나오게 찍어 주세요.",
+                           kind, best_finding)
+    return best
 
 
 # ---------------------------------------------------------------- 메인

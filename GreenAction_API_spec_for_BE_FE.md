@@ -178,7 +178,9 @@ BE는 부여할 때 이 값을 챌린지에 스냅샷으로 저장해 두고 규
 
 사진(텀블러/인증 마크 상품 + 영수증)을 읽어 인증 여부를 정합니다. **사진은 저장하지 않습니다.**
 
-**요청** (`multipart/form-data`): `kind` = `TUMBLER` | `LOW_CARBON`, `images` = 사진 1~3장(장당 8MB 이하, 영수증과 상품을 한 장에 같이 찍어도 됨)
+**요청** (`multipart/form-data`): `kind` = `TUMBLER` | `LOW_CARBON`, `images` = 사진 1~3장(장당 8MB 이하)
+
+**판정 원칙: 한 사진 안에서 조건이 모두 맞아야 합니다.** AI가 사진마다 따로 읽고, 텀블러(또는 인증 마크 상품)와 읽히는 최근 영수증이 **같은 사진**에 함께 있는 사진이 한 장이라도 있으면 통과합니다. 텀블러 사진 따로·영수증 사진 따로 내면 합치지 않고 `SEPARATE_PHOTOS`로 거절합니다(집에서 찍은 텀블러 + 일회용 컵으로 산 영수증 같은 악용 방지). 영수증 자체에 개인컵 할인·에코별 줄이 찍혀 있으면(매장 POS 기록) 영수증만으로 통과합니다(`CHALLENGE_ALLOW_DISCOUNT_ONLY=false`로 끌 수 있음). 여러 장을 보내는 것은 흐린 사진을 대비한 "다시 찍은 사진"용입니다.
 
 **응답** (통과/거절 모두 200)
 ```json
@@ -192,7 +194,7 @@ BE는 부여할 때 이 값을 챌린지에 스냅샷으로 저장해 두고 규
   "marks": []
 }
 ```
-- `code`: `OK`, `RECEIPT_UNREADABLE`(영수증의 가맹점·날짜·금액을 못 읽음), `RECEIPT_DATE`, `RECEIPT_TOO_OLD`(오늘·어제 영수증만 인정), `RECEIPT_EDITED`(편집 흔적), `NOT_CAFE`, `NO_TUMBLER`, `NO_MARK`
+- `code`: `OK`, `RECEIPT_UNREADABLE`(영수증의 가맹점·날짜·금액을 못 읽음), `RECEIPT_DATE`, `RECEIPT_TOO_OLD`(결제 시각이 읽히면 **24시간 안**, 안 읽히면 오늘·어제 영수증만 인정), `RECEIPT_EDITED`(편집 흔적), `NOT_CAFE`, `NO_TUMBLER`, `NO_MARK`, `SEPARATE_PHOTOS`(텀블러/마크와 영수증이 서로 다른 사진에 있음)
 - `evidence`(통과 근거): `PHOTO_AND_RECEIPT`(텀블러 사진 + 영수증 개인컵 할인), `PHOTO`(텀블러 사진 + 카페 영수증), `RECEIPT_DISCOUNT`(영수증의 개인컵/에코별 문구), `MARK_AND_RECEIPT`(인정 마크 + 영수증)
 - `receipt.fingerprint`: 날짜·시각·금액의 해시. **BE가 DB 유니크로 중복 사용을 막습니다** (같은 영수증을 다시 찍어도 같은 값이 나옴, 저화질 재촬영으로 확인).
 - 오류: 사진 형식 문제 `400`(`detail`에 문구), AI 일시 불가 `503`. `CHALLENGE_VERIFY_ENABLED=false`로 기능을 끌 수 있습니다.
