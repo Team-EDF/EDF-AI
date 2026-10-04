@@ -11,7 +11,8 @@ LLM을 쓰지 않는 순수 규칙 기반이라 같은 답변이면 항상 같�
 주의: 아래 기준선(LEVEL_CUTS, TABLE_FEAST_THRESHOLD_KG)은 비교할 전국 평균 같은 외부 통계 없이
 설문 선택지 구간에 맞춰 정한 잠정값이다. 실제 배포 전 팀 검토가 필요하다.
 """
-from app.services.onboarding_service import calculate_onboarding_target
+from app.services.onboarding_service import build_goal, calculate_onboarding_target
+from app.services.realdata_service import get_area_stats
 
 LEVEL_LABELS = {
     1: "매우 낮음",
@@ -241,15 +242,63 @@ def build_green_type(
     }
 
 
-def build_profile(answers: dict, conn=None) -> dict:
-    """설문 답변으로 Green Profile(영역별 레벨 + 그린 유형 + 목표)을 만든다."""
-    target = calculate_onboarding_target(answers, conn=conn)
+def _survey_area_values(target: dict) -> dict[str, dict]:
+    """설문 추정값(calculate_onboarding_target 결과)을 프로필 영역 키별 {carbon_kg, spend_krw}로 바꾼다."""
+    return {
+        area["key"]: {
+            "carbon_kg": target["carbon_breakdown_kg"][area["source_key"]],
+            "spend_krw": target["estimated_spend_krw"][area["source_key"]],
+        }
+        for area in AREAS
+    }
+
+
+def _merge_with_data(survey_values: dict[str, dict], data_areas: dict[str, dict]) -> dict[str, dict]:
+    """
+    실데이터 영역값을 쓰되, 이동은 설문 추정값보다 낮아지지 않게 한다.
+    자가용 연료비는 영수증으로 잘 안 올라와서 데이터만 보면 자가용 사용자가 뚜벅이로 바뀌어 버린다.
+    (이동에 영수증이 많이 올라와서 설문보다 크면 데이터 값을 쓴다.)
+    """
+    merged = {key: dict(value) for key, value in data_areas.items()}
+    if survey_values["move"]["carbon_kg"] > merged["move"]["carbon_kg"]:
+        merged["move"] = dict(survey_values["move"])
+    return merged
+
+
+def build_profile(answers: dict, conn=None, user_id: int | None = None) -> dict:
+    """
+    Green Profile(영역별 레벨 + 그린 유형 + 목표)을 만든다.
+
+    - 기본은 설문 답변으로 계산한다 (source="survey").
+    - user_id가 있고 최근 30일 확정 영수증이 충분하면(realdata_service.DATA_MIN_RECEIPTS건 이상)
+      실제 소비 데이터로 계산한다 (source="data"). 모자라면 설문으로 계산하고 이유를 data_info에 남긴다.
+      성향(실행가/탐색가, 선호 난이도)은 설문 답변(eco_interest, goal_intent)에서 계속 가져온다.
+    """
+    survey = calculate_onboarding_target(answers, conn=conn)
+    area_values = _survey_area_values(survey)
+    baseline_carbon_kg = survey["baseline_carbon_kg"]
+    source = "survey"
+    data_info = None
+
+    if user_id is not None:
+        stats = get_area_stats(user_id, conn=conn)
+        data_info = {
+            "used": stats["enough"],
+            "receipts_in_window": stats["receipts"],
+            "window_days": stats["window_days"],
+            "min_receipts": stats["min_receipts"],
+            "reason": None if stats["enough"] else "insufficient_receipts",
+        }
+        if stats["enough"]:
+            source = "data"
+            area_values = _merge_with_data(area_values, stats["areas"])
+            baseline_carbon_kg = round(sum(v["carbon_kg"] for v in area_values.values()), 3)
 
     areas = []
     levels: dict[str, int] = {}
     carbons: dict[str, float] = {}
     for area in AREAS:
-        carbon_kg = target["carbon_breakdown_kg"][area["source_key"]]
+        carbon_kg = area_values[area["key"]]["carbon_kg"]
         level = get_area_level(area["key"], carbon_kg)
         levels[area["key"]] = level
         carbons[area["key"]] = carbon_kg
@@ -259,16 +308,18 @@ def build_profile(answers: dict, conn=None) -> dict:
             "level": level,
             "level_label": LEVEL_LABELS[level],
             "carbon_kg": carbon_kg,
-            "spend_krw": target["estimated_spend_krw"][area["source_key"]],
+            "spend_krw": area_values[area["key"]]["spend_krw"],
         })
 
+    goal = build_goal(baseline_carbon_kg, answers.get("goal_intent"))
     return {
-        "source": "survey",
+        "source": source,
         "areas": areas,
         "persona": build_green_type(levels, carbons, answers.get("eco_interest"), answers.get("goal_intent")),
         "focus_area": get_focus_area(levels),
-        "baseline_carbon_kg": target["baseline_carbon_kg"],
-        "reduction_rate": target["reduction_rate"],
-        "target_carbon_kg": target["target_carbon_kg"],
-        "message": target["message"],
+        "baseline_carbon_kg": baseline_carbon_kg,
+        "reduction_rate": goal["reduction_rate"],
+        "target_carbon_kg": goal["target_carbon_kg"],
+        "message": goal["message"],
+        "data_info": data_info,
     }

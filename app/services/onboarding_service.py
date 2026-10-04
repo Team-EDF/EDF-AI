@@ -165,26 +165,30 @@ def calculate_onboarding_target(answers: dict, conn=None) -> dict:
         "shopping": shopping_spend,
     }
 
-    goal_intent = answers.get("goal_intent")
+    return {
+        "estimated_spend_krw": spend_krw,
+        "carbon_breakdown_kg": breakdown,
+        "baseline_carbon_kg": baseline_carbon_kg,
+        **build_goal(baseline_carbon_kg, answers.get("goal_intent")),
+    }
+
+
+def build_goal(baseline_carbon_kg: float, goal_intent: str | None) -> dict:
+    """
+    기준 배출량(baseline)과 "이번 달 각오"로 감축률/목표/안내 문구를 만든다.
+    설문 기반과 실데이터 기반 프로필이 같은 규칙을 쓰도록 따로 뺀 함수다.
+    """
     reduction_rate = GOAL_INTENT_REDUCTION_RATE.get(goal_intent, 0.05)
 
-    if reduction_rate is None:
+    if reduction_rate is None:  # "일단 구경만"은 목표를 잡지 않는다
         return {
-            "estimated_spend_krw": spend_krw,
-            "carbon_breakdown_kg": breakdown,
-            "baseline_carbon_kg": baseline_carbon_kg,
             "reduction_rate": None,
             "target_carbon_kg": None,
             "message": GOAL_INTENT_MESSAGES["just_looking"],
         }
 
-    target_carbon_kg = round(baseline_carbon_kg * (1 - reduction_rate), 3)
-
     return {
-        "estimated_spend_krw": spend_krw,
-        "carbon_breakdown_kg": breakdown,
-        "baseline_carbon_kg": baseline_carbon_kg,
         "reduction_rate": reduction_rate,
-        "target_carbon_kg": target_carbon_kg,
+        "target_carbon_kg": round(baseline_carbon_kg * (1 - reduction_rate), 3),
         "message": GOAL_INTENT_MESSAGES.get(goal_intent, GOAL_INTENT_MESSAGES["light_start"]),
     }

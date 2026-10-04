@@ -4,8 +4,12 @@ from pydantic import BaseModel
 
 from app.api.schemas.onboarding import OnboardingAnswers
 
-# 요청 본문은 설문 답변 스키마를 그대로 쓴다 (필드명·옵션 값은 BE 문항 확정 후 맞출 예정).
-ProfileRequest = OnboardingAnswers
+class ProfileRequest(OnboardingAnswers):
+    """
+    설문 답변(필드명·옵션 값은 BE 문항 확정 후 맞출 예정) + 선택 항목 user_id.
+    user_id를 주면 최근 30일 확정 영수증이 충분할 때 실데이터로 프로필을 계산한다.
+    """
+    user_id: Optional[int] = None
 
 
 class ProfileArea(BaseModel):
@@ -34,8 +38,18 @@ class ProfilePersona(BaseModel):
     preferred_difficulty: int  # 챌린지 선호 난이도 1~3 (추천 시 사용)
 
 
+class ProfileDataInfo(BaseModel):
+    """user_id를 보냈을 때만 채워지는, 실데이터 사용 여부와 근거."""
+    used: bool                       # 실데이터로 계산했는지
+    receipts_in_window: int          # 최근 window_days일 확정 영수증 수
+    window_days: int
+    min_receipts: int                # 실데이터로 전환하는 최소 영수증 수
+    reason: Optional[str] = None     # used가 False일 때 이유: "insufficient_receipts"
+
+
 class ProfileResponse(BaseModel):
-    source: str              # "survey" (설문 기반) | "data" (실데이터 기반, 2단계)
+    source: str              # "survey" (설문 기반) | "data" (최근 30일 영수증 기반)
+    data_info: Optional[ProfileDataInfo] = None
     areas: list[ProfileArea]
     persona: ProfilePersona
     focus_area: Optional[str]            # 먼저 시작할 영역 키, 전부 1레벨이면 None
