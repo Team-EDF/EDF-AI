@@ -7,6 +7,7 @@
 import itertools
 
 from app.services.profile_service import (
+    ACTION_PERCENT,
     AXES,
     GREEN_TYPES,
     LEVEL_CUTS,
@@ -150,7 +151,7 @@ def test_every_answer_combination_gives_valid_type():
         for food, cafe in ((8.0, 0.0), (45.0, 0.0)):
             for eco, goal in itertools.product((*VALID_ECO_INTERESTS, None), (*VALID_GOAL_INTENTS, None)):
                 levels = {"move": move, "food": 2, "cafe": 1, "shop": shop}
-                result = build_green_type(levels, {"food": food, "cafe": cafe}, eco, goal)
+                result = build_green_type(levels, {"move": 0.0, "food": food, "cafe": cafe, "shop": 0.0}, eco, goal)
                 assert result["type_code"] in GREEN_TYPES
 
 
@@ -169,3 +170,46 @@ def test_focus_area_picks_highest_level_with_tie_order():
     assert get_focus_area({"move": 2, "food": 3, "cafe": 2, "shop": 3}) == "food"   # 동점이면 move>food>shop>cafe
     assert get_focus_area({"move": 1, "food": 2, "cafe": 4, "shop": 2}) == "cafe"
     assert get_focus_area({"move": 1, "food": 1, "cafe": 1, "shop": 1}) is None     # 전부 1레벨이면 없음
+
+
+# ---------------------------------------------------------------- 축 비율(%)
+
+def _axes_for(levels, carbons, eco, goal):
+    return build_green_type(levels, carbons, eco, goal)["axes"]
+
+
+def test_axis_percent_matches_letter_and_sums_to_100():
+    # 어떤 입력이어도 선택된 쪽이 50 이상이고, 선택+반대 = 100, 범위 5~95
+    for move_kg in (0.0, 0.5, 5.0, 10.0, 10.5, 30.0, 150.0, 400.0):
+        for food_kg in (0.0, 8.0, 39.9, 40.0, 90.0):
+            for shop_kg in (0.0, 4.0, 10.0, 12.0, 80.0):
+                for eco, goal in itertools.product((*VALID_ECO_INTERESTS, None), (*VALID_GOAL_INTENTS, None)):
+                    carbons = {"move": move_kg, "food": food_kg, "cafe": 0.0, "shop": shop_kg}
+                    levels = {key: get_area_level(key, carbons[key]) for key in carbons}
+                    for axis in _axes_for(levels, carbons, eco, goal):
+                        assert 50 <= axis["percent"] <= 95
+                        assert axis["percent"] + axis["opposite_percent"] == 100
+                        assert axis["opposite_letter"] != axis["letter"]
+
+
+def test_axis_percent_grows_with_distance_from_threshold():
+    def move_percent(kg):
+        carbons = {"move": kg, "food": 0.0, "cafe": 0.0, "shop": 0.0}
+        levels = {key: get_area_level(key, carbons[key]) for key in carbons}
+        return _axes_for(levels, carbons, None, None)[0]
+
+    near, mid, far = move_percent(0.0), move_percent(5.0), move_percent(10.0)
+    assert near["letter"] == mid["letter"] == far["letter"] == "W"
+    assert near["percent"] > mid["percent"] > far["percent"] == 50       # 기준선(10kg)에 가까울수록 반반에 가깝다
+    assert move_percent(40.0)["letter"] == "D" and move_percent(40.0)["percent"] > 50
+
+
+def test_attitude_percent_agrees_with_letter():
+    for eco, goal in itertools.product(VALID_ECO_INTERESTS, VALID_GOAL_INTENTS):
+        letter = classify_attitude_axis(eco, goal)
+        action_percent = ACTION_PERCENT[(eco, goal)]
+        assert (action_percent > 50) == (letter == "A")
+    carbons = {"move": 0.0, "food": 0.0, "cafe": 0.0, "shop": 0.0}
+    levels = {key: 1 for key in carbons}
+    unknown = _axes_for(levels, carbons, None, None)[3]
+    assert unknown["letter"] == "E" and unknown["percent"] == 50

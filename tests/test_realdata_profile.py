@@ -241,7 +241,9 @@ def test_api_passes_user_id_and_returns_data_info():
         "areas": [{"key": k, "label": k, "level": 1, "level_label": "매우 낮음", "carbon_kg": 0.0, "spend_krw": 0}
                   for k in ("move", "food", "cafe", "shop")],
         "persona": {"type_code": "WLME", "type_name": "n", "emoji": "e", "tagline": "t", "description": "d",
-                    "axes": [{"axis": "이동", "letter": "W", "label": "뚜벅이"}], "preferred_difficulty": 1},
+                    "axes": [{"axis": "이동", "letter": "W", "label": "뚜벅이", "percent": 90,
+                              "opposite_letter": "D", "opposite_label": "드라이버", "opposite_percent": 10}],
+                    "preferred_difficulty": 1},
         "focus_area": None, "baseline_carbon_kg": 0.0, "reduction_rate": 0.05, "target_carbon_kg": 0.0, "message": "m",
     }
     app = FastAPI()

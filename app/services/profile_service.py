@@ -11,6 +11,8 @@ LLM을 쓰지 않는 순수 규칙 기반이라 같은 답변이면 항상 같�
 주의: 아래 기준선(LEVEL_CUTS, TABLE_FEAST_THRESHOLD_KG)은 비교할 전국 평균 같은 외부 통계 없이
 설문 선택지 구간에 맞춰 정한 잠정값이다. 실제 배포 전 팀 검토가 필요하다.
 """
+import math
+
 from app.services.onboarding_service import build_goal, calculate_onboarding_target
 from app.services.realdata_service import get_area_stats
 
@@ -170,6 +172,60 @@ def get_area_level(area_key: str, carbon_kg: float) -> int:
     return 5
 
 
+# get_axis_percents가 돌려주는 값이 어느 글자 쪽 비율인지 (AXES 순서와 같다).
+PERCENT_LETTERS = ["D", "F", "S", "A"]
+
+# 축 비율(%) 계산용. 기준선에서 멀수록 한쪽에 가까워지되, 5~95%로 제한해 100%/0%는 보여주지 않는다.
+AXIS_PERCENT_MIN = 5
+AXIS_PERCENT_MAX = 95
+AXIS_PERCENT_STEEPNESS = 2.5       # 기준선에서 10배 멀어질 때 비율이 얼마나 가파르게 변하는지(로그 스케일)
+
+# 태도 축은 연속값이 없어서 (친환경 경험·관심, 이번 달 각오) 답변 조합별 "실행가(A) 비율"을 고정값으로 둔다.
+# 실행가(A)로 판정되는 조합은 모두 50 초과, 탐색가(E)로 판정되는 조합은 모두 50 이하여야 한다.
+ACTION_PERCENT = {
+    ("tried", "serious_reduction"): 90,
+    ("interested_not_tried", "serious_reduction"): 85,
+    ("not_interested", "serious_reduction"): 70,
+    ("tried", "light_start"): 75,
+    ("interested_not_tried", "light_start"): 65,
+    ("not_interested", "light_start"): 35,
+    ("tried", "just_looking"): 40,
+    ("interested_not_tried", "just_looking"): 25,
+    ("not_interested", "just_looking"): 10,
+}
+UNKNOWN_ACTION_PERCENT = 50        # 답변이 비었거나 알 수 없으면 판단 근거가 없어 반반
+
+
+def _upper_pole_percent(value_kg: float, threshold_kg: float, floor_kg: float) -> int:
+    """기준선(threshold) 대비 value의 로그 비율로 "기준선 위쪽 극(D/F/S)"에 가까운 정도(5~95%)를 구한다."""
+    ratio = math.log10(max(value_kg, floor_kg) / threshold_kg)
+    share = 1 / (1 + math.exp(-AXIS_PERCENT_STEEPNESS * ratio))
+    return max(AXIS_PERCENT_MIN, min(AXIS_PERCENT_MAX, round(share * 100)))
+
+
+def _axis_threshold_kg(area_key: str, min_level: int) -> float:
+    """"레벨이 min_level 이상"이 되는 월 탄소량 경계(kg). 해당 영역 기준선 중 min_level-1번째 값."""
+    return float(LEVEL_CUTS[area_key][min_level - 2])
+
+
+def get_axis_percents(
+    carbons: dict[str, float],
+    eco_interest: str | None,
+    goal_intent: str | None,
+) -> list[int]:
+    """
+    축별 비율을 [이동 D%, 식탁 F%, 소비 S%, 태도 A%] 순서로 돌려준다 (각 값 = 그 글자 쪽에 가까운 정도).
+    기준선을 넘어 D/F/S로 판정되거나 실행가(A)로 판정되면 값이 50 초과, 아니면 50 이하라서
+    코드 글자 판정(classify_*_axis)과 같은 방향이다.
+    """
+    return [
+        _upper_pole_percent(carbons["move"], _axis_threshold_kg("move", MOVE_DRIVER_MIN_LEVEL), 0.1),
+        _upper_pole_percent(carbons["food"] + carbons["cafe"], TABLE_FEAST_THRESHOLD_KG, 1.0),
+        _upper_pole_percent(carbons["shop"], _axis_threshold_kg("shop", SHOP_SHOPPER_MIN_LEVEL), 0.5),
+        ACTION_PERCENT.get((eco_interest, goal_intent), UNKNOWN_ACTION_PERCENT),
+    ]
+
+
 def classify_move_axis(move_level: int) -> str:
     """이동 축: 자가용 중심이면 D(드라이버), 아니면 W(뚜벅이)."""
     return "D" if move_level >= MOVE_DRIVER_MIN_LEVEL else "W"
@@ -228,16 +284,28 @@ def build_green_type(
     ]
     code = "".join(letters)
     info = GREEN_TYPES[code]
+    upper_percents = get_axis_percents(carbons, eco_interest, goal_intent)
+    axes = []
+    for axis, letter, upper_letter, upper_percent in zip(AXES, letters, PERCENT_LETTERS, upper_percents):
+        # 선택된 글자 쪽 비율(percent)과 반대쪽 비율(opposite_percent). 합은 항상 100.
+        percent = max(50, upper_percent if letter == upper_letter else 100 - upper_percent)
+        opposite_letter = next(pole for pole in axis["poles"] if pole != letter)
+        axes.append({
+            "axis": axis["axis"],
+            "letter": letter,
+            "label": axis["poles"][letter],
+            "percent": percent,
+            "opposite_letter": opposite_letter,
+            "opposite_label": axis["poles"][opposite_letter],
+            "opposite_percent": 100 - percent,
+        })
     return {
         "type_code": code,
         "type_name": info["type_name"],
         "emoji": info["emoji"],
         "tagline": info["tagline"],
         "description": info["description"],
-        "axes": [
-            {"axis": axis["axis"], "letter": letter, "label": axis["poles"][letter]}
-            for axis, letter in zip(AXES, letters)
-        ],
+        "axes": axes,
         "preferred_difficulty": get_preferred_difficulty(eco_interest, goal_intent),
     }
 

@@ -59,10 +59,14 @@
     "tagline": "바쁘게 달리고 알뜰히 사는 전나무",
     "description": "자가용 이동과 쇼핑이 눈에 띄어요. 실천 의지가 높으니 이동과 쇼핑 챌린지를 번갈아 도전해 보세요.",
     "axes": [
-      { "axis": "이동", "letter": "D", "label": "드라이버" },
-      { "axis": "식탁", "letter": "L", "label": "가벼운 식탁" },
-      { "axis": "소비", "letter": "S", "label": "쇼퍼" },
-      { "axis": "태도", "letter": "A", "label": "실행가" }
+      { "axis": "이동", "letter": "D", "label": "드라이버", "percent": 78,
+        "opposite_letter": "W", "opposite_label": "뚜벅이", "opposite_percent": 22 },
+      { "axis": "식탁", "letter": "L", "label": "가벼운 식탁", "percent": 52,
+        "opposite_letter": "F", "opposite_label": "풍성한 식탁", "opposite_percent": 48 },
+      { "axis": "소비", "letter": "S", "label": "쇼퍼", "percent": 73,
+        "opposite_letter": "M", "opposite_label": "미니멀", "opposite_percent": 27 },
+      { "axis": "태도", "letter": "A", "label": "실행가", "percent": 85,
+        "opposite_letter": "E", "opposite_label": "탐색가", "opposite_percent": 15 }
     ],
     "preferred_difficulty": 2
   },
@@ -79,7 +83,7 @@
 | `source` | `"survey"`(설문 기반) / `"data"`(최근 30일 영수증 기반) |
 | `data_info` | `user_id`를 보냈을 때만 있음(없으면 `null`). `used`, 영수증 수, 최소 조건, `reason` |
 | `areas[]` | 이동·식품·카페·쇼핑 4개. `level` 1~5(매우 낮음~매우 높음)로 "Green Profile" 막대를 그림. `carbon_kg`는 월 예상 배출량 |
-| `persona` | **그린 유형**(4축 16유형, 식물·자연 테마). `type_code`(예 `DLSA`), 이름, 이모지, 한 줄 소개, 설명, 축 4개(`axes`). `preferred_difficulty`는 추천에 쓰는 값이라 화면엔 안 보여도 됨 |
+| `persona` | **그린 유형**(4축 16유형, 식물·자연 테마). `type_code`(예 `DLSA`), 이름, 이모지, 한 줄 소개, 설명, 축 4개(`axes`, 축마다 선택된 쪽 `percent`(50~95)와 반대쪽 `opposite_percent`, 합 100 — MBTI식 비율 막대용. 기준선에서 멀수록 한쪽에 가깝고, 태도 축은 설문 답 조합별 고정값). `preferred_difficulty`는 추천에 쓰는 값이라 화면엔 안 보여도 됨 |
 | `focus_area` | 먼저 시작할 영역 키(`move`/`food`/`cafe`/`shop`), 모두 1레벨이면 `null` |
 | `baseline_carbon_kg` | 월 예상(또는 실제) 배출량 |
 | `reduction_rate`, `target_carbon_kg` | 이번 달 추천 목표. **"일단 구경만"이면 둘 다 `null`** → 목표 대신 기준 배출량만 보여 주세요 |

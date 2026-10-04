@@ -25,6 +25,10 @@ class ProfileAxis(BaseModel):
     axis: str                # "이동" | "식탁" | "소비" | "태도"
     letter: str              # 예: "W"
     label: str               # 예: "뚜벅이"
+    percent: int             # 선택된 쪽 비율 50~95 (예: 뚜벅이 78)
+    opposite_letter: str     # 반대쪽 글자, 예: "D"
+    opposite_label: str      # 예: "드라이버"
+    opposite_percent: int    # 반대쪽 비율 = 100 - percent
 
 
 class ProfilePersona(BaseModel):
