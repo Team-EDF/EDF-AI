@@ -19,7 +19,9 @@
 | AI-2.3 설명 문구 (LLM + 폴백) | 완료 (10/4) | `app/services/challenge_explainer.py`, 숫자 지어내기 차단, 실제 Gemini 호출 확인 |
 | AI-2.4 `POST /api/challenges/recommend` | 완료 (10/4) | `challenge_service.py`, 테스트 19개. **AI API 1차 완성 → BE/FE에 명세 공유 가능** |
 | 개인 저장소 구성 | 완료 (10/4) | `gunmyeol/edf-ai·be·fe` 비공개, 작업 폴더 `C:\edf-work` |
-| 다음 | AI-4.2 API 명세 문서 정리·공유, AI-3.1 실데이터 전환(X-3 선행), AI-3.2 더미 데이터 테스트 | 10/5~8 |
+| AI-3.1 실데이터 전환 | 완료 (10/4) | `realdata_service.py`, `POST /api/profile`에 선택 항목 `user_id`. 영수증 `ocr_data` 기반이라 X-3(`category_stats` 불일치)와 무관하게 동작 |
+| AI-3.2 실데이터 시나리오 테스트 | 완료 (10/4) | 실제 DB로 신규/부족/충분 3시나리오 확인(트랜잭션 되돌림, DB 변화 없음), 단위 테스트 17개 |
+| 다음 | AI-4.2 API 명세 정리·BE/FE 공유 메시지, AI-4.3 코드 정리, PR 준비(팀 저장소 반영은 사용자 지시 시) | 10/5~8 |
 
 ## 0. 전제
 
