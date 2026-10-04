@@ -8,6 +8,7 @@ from app.db_migrations import run_db_migrations
 from app.db_seed import seed_reference_data
 
 from app.api.routes import (
+    challenges,
     feedback,
     merchant,
     ocr,
@@ -102,6 +103,14 @@ app.include_router(
     profile.router,
     prefix="/api",
     tags=["profile"],
+)
+
+
+# 챌린지 카탈로그 (5영역 x 3난이도 = 15개, BE가 챌린지 테이블 seed에 사용)
+app.include_router(
+    challenges.router,
+    prefix="/api",
+    tags=["challenges"],
 )
 
 
