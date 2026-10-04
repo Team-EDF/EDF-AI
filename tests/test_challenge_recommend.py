@@ -149,8 +149,10 @@ def test_llm_disabled_flag_skips_the_call():
 
 def test_prompt_contains_facts_and_number_rule():
     prompt = build_prompt(_selected(), PROFILE["persona"])
-    for text in ("MOVE_2", "대중교통 주 2회 이용하기", "포인트 70", "쭉쭉 자라는 전나무", "새로운 숫자"):
+    for text in ("MOVE_2", "대중교통 주 2회 이용하기", "포인트 70", "새로운 숫자"):
         assert text in prompt
+    # GSTI 유형 이름은 재미로 보는 결과라 추천 문구 프롬프트에 넣지 않는다
+    assert "쭉쭉 자라는 전나무" not in prompt
 
 
 # ---------------------------------------------------------------- 추천 흐름
@@ -222,3 +224,76 @@ def test_api_recommend_bad_input_is_422():
     client = _client()
     assert client.post("/api/challenges/recommend", json={"profile": {"areas": [{"key": "move"}]}}).status_code == 422
     assert client.post("/api/challenges/recommend", json={"profile": {"areas": "move"}}).status_code == 422
+
+
+# ---------------------------------------------------------------- 사용자 이름 (GSTI 유형 이름 대신)
+
+def test_user_name_is_sanitized():
+    from app.services.challenge_explainer import MAX_NAME_CHARS, sanitize_user_name
+
+    assert sanitize_user_name("테스트 유저") == "테스트 유저"
+    assert sanitize_user_name("  테스트\n유저<script>!! ") == "테스트 유저 script"   # 줄바꿈·특수문자 제거
+    assert len(sanitize_user_name("가" * 100)) == MAX_NAME_CHARS
+    assert sanitize_user_name("") is None and sanitize_user_name("!!!") is None and sanitize_user_name(None) is None
+
+
+def test_prompt_uses_name_and_never_the_type_name():
+    from app.services.challenge_explainer import build_prompt
+
+    challenges = [_challenge_for_prompt()]
+    persona = {"type_name": "느긋한 고구마", "tagline": "천천히 익어가는 고구마"}
+    prompt = build_prompt(challenges, persona, "테스트 유저")
+    assert "이름: 테스트 유저" in prompt and "'테스트 유저님'" in prompt
+    assert "느긋한 고구마" not in prompt and "천천히 익어가는" not in prompt
+    anonymous = build_prompt(challenges, persona, None)
+    assert "이름을 모름" in anonymous and "님'이라고" not in anonymous
+
+
+def test_fallback_reason_includes_name_when_given():
+    from app.services.challenge_explainer import build_fallback_reason
+
+    challenge = _challenge_for_prompt()
+    assert build_fallback_reason(challenge, "테스트 유저").startswith("테스트 유저님, ")
+    assert not build_fallback_reason(challenge).startswith("테스트 유저님")
+    assert "님," not in build_fallback_reason(challenge)
+
+
+def test_generate_reasons_accepts_digits_in_name_and_passes_name_to_llm():
+    from app.services.challenge_explainer import SOURCE_LLM, generate_reasons
+
+    challenges = [_challenge_for_prompt()]
+    seen = {}
+
+    def fake_llm(prompt):
+        seen["prompt"] = prompt
+        return '{"MOVE_2": "user7님, 이동 영역을 줄일 여지가 커요."}'   # 이름 속 숫자(7)는 지어낸 숫자가 아니다
+
+    result = generate_reasons(challenges, {"type_name": "느긋한 고구마"}, llm_call=fake_llm, user_name="user7")
+    assert result[0]["reason_source"] == SOURCE_LLM and result[0]["reason"].startswith("user7님")
+    assert "이름: user7" in seen["prompt"] and "고구마" not in seen["prompt"]
+    # 이름에 없는 숫자는 여전히 막는다
+    result = generate_reasons(
+        challenges, None, user_name="user7",
+        llm_call=lambda prompt: '{"MOVE_2": "user7님, 탄소를 35% 줄여요."}',
+    )
+    assert result[0]["reason_source"] == "fallback" and result[0]["reason"].startswith("user7님, ")
+
+
+def test_recommend_passes_user_name_to_reason():
+    profile = {
+        "source": "survey",
+        "areas": [{"key": "move", "level": 4}, {"key": "food", "level": 2}, {"key": "cafe", "level": 1}, {"key": "shop", "level": 2}],
+        "persona": {"type_name": "느긋한 고구마", "preferred_difficulty": 2},
+    }
+    from app.services.challenge_service import recommend_challenges
+
+    result = recommend_challenges(profile, llm_call=lambda prompt: "not json", user_name="테스트 유저")
+    assert result["challenges"] and all(c["reason"].startswith("테스트 유저님, ") for c in result["challenges"])
+    assert all("고구마" not in c["reason"] for c in result["challenges"])
+
+
+def _challenge_for_prompt():
+    return {
+        "challenge_id": "MOVE_2", "area_label": "이동", "title": "대중교통 2회", "points": 70,
+        "selection": {"area_level": 4, "role": "top_area", "slot": 1},
+    }

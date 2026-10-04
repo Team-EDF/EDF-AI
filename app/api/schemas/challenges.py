@@ -51,6 +51,7 @@ class RecommendRequest(BaseModel):
     profile: Optional[RecommendProfile] = None
     user_id: Optional[int] = None                       # 실데이터 전환(2단계) 이후 사용
     exclude_challenge_ids: list[str] = []               # 이미 부여/완료한 챌린지
+    user_name: Optional[str] = None                     # 추천 이유 문구에서 "{이름}님"으로 부를 이름 (없으면 이름 없이 작성)
 
 
 class RecommendedChallenge(CatalogChallenge):

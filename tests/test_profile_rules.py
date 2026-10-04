@@ -213,3 +213,31 @@ def test_attitude_percent_agrees_with_letter():
     levels = {key: 1 for key in carbons}
     unknown = _axes_for(levels, carbons, None, None)[3]
     assert unknown["letter"] == "E" and unknown["percent"] == 50
+
+
+# ---------------------------------------------------------------- 챌린지 완료로 태도 축 갱신
+
+def test_recent_challenge_completions_raise_attitude_to_action():
+    from app.services.profile_service import ACTIVE_ACTION_PERCENT, ACTIVE_COMPLETIONS_MIN
+
+    # 설문상 구경만(E)이어도 최근 챌린지를 꾸준히 완료했으면 실행가(A)
+    assert classify_attitude_axis("not_interested", "just_looking", 0) == "E"
+    assert classify_attitude_axis("not_interested", "just_looking", ACTIVE_COMPLETIONS_MIN) == "A"
+    assert classify_attitude_axis(None, None, ACTIVE_COMPLETIONS_MIN) == "A"
+    # 완료 수가 모자라면 그대로
+    assert classify_attitude_axis("not_interested", "just_looking", ACTIVE_COMPLETIONS_MIN - 1) == "E"
+
+    carbons = {"move": 0.0, "food": 0.0, "cafe": 0.0, "shop": 0.0}
+    levels = {key: 1 for key in carbons}
+    before = build_green_type(levels, carbons, "not_interested", "just_looking", 0)["axes"][3]
+    after = build_green_type(levels, carbons, "not_interested", "just_looking", ACTIVE_COMPLETIONS_MIN)["axes"][3]
+    assert before["letter"] == "E" and before["percent"] == 90
+    assert after["letter"] == "A" and after["percent"] == ACTIVE_ACTION_PERCENT
+
+
+def test_completions_never_lower_an_already_active_attitude():
+    # 설문에서 이미 높은 실행가(90%)였으면 완료 이력으로 비율이 깎이지 않는다
+    carbons = {"move": 0.0, "food": 0.0, "cafe": 0.0, "shop": 0.0}
+    levels = {key: 1 for key in carbons}
+    axis = build_green_type(levels, carbons, "tried", "serious_reduction", 5)["axes"][3]
+    assert axis["letter"] == "A" and axis["percent"] == 90

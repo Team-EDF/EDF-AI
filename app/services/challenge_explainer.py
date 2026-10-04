@@ -26,6 +26,8 @@ GEMINI_MODEL = "gemini-2.5-flash"
 LLM_TIMEOUT_MS = 6000
 MAX_REASON_CHARS = 120
 
+MAX_NAME_CHARS = 20
+
 SOURCE_LLM = "llm"
 SOURCE_FALLBACK = "fallback"
 
@@ -40,8 +42,21 @@ def llm_enabled() -> bool:
 
 # ---------------------------------------------------------------- 폴백(고정 문구)
 
-def build_fallback_reason(challenge: dict) -> str:
-    """LLM 없이도 쓸 수 있는 고정 설명 문구 (같은 입력이면 같은 문구)."""
+def sanitize_user_name(name) -> str | None:
+    """
+    사용자 이름을 문구에 안전하게 쓸 수 있게 다듬는다 (줄바꿈·특수문자 제거, 최대 MAX_NAME_CHARS자).
+    이름이 프롬프트에 그대로 들어가므로 한글·영문·숫자·공백·점·밑줄·하이픈만 남긴다. 비면 None.
+    """
+    if not isinstance(name, str):
+        return None
+    cleaned = re.sub(r"[^0-9A-Za-z가-힣ㄱ-ㅎㅏ-ㅣ ._-]", " ", name)
+    cleaned = " ".join(cleaned.split())[:MAX_NAME_CHARS].strip()
+    return cleaned or None
+
+
+def build_fallback_reason(challenge: dict, user_name: str | None = None) -> str:
+    """LLM 없이도 쓸 수 있는 고정 설명 문구 (같은 입력이면 같은 문구). 이름이 있으면 앞에 붙인다."""
+    greeting = f"{user_name}님, " if user_name else ""
     selection = challenge.get("selection", {})
     role = selection.get("role")
     level = selection.get("area_level")
@@ -50,12 +65,12 @@ def build_fallback_reason(challenge: dict) -> str:
     level_label = LEVEL_LABELS.get(level) if isinstance(level, int) else None
 
     if role == "aux_life":
-        return f"생활 속 작은 습관이에요. 부담 없이 '{title}'로 가볍게 시작해 보세요."
+        return f"{greeting}생활 속 작은 습관이에요. 부담 없이 '{title}'로 가볍게 시작해 보세요."
     if role == "top_area" and level_label:
-        return f"{area_label} 영역이 '{level_label}'로 나와서 줄일 여지가 가장 커요. '{title}'부터 시작해 보세요."
+        return f"{greeting}{area_label} 영역이 '{level_label}'로 나와서 줄일 여지가 가장 커요. '{title}'부터 시작해 보세요."
     if level_label:
-        return f"{area_label} 영역도 '{level_label}' 수준이에요. 부담 없이 '{title}'로 이어가 보세요."
-    return f"{area_label} 영역에서 '{title}'로 작은 변화를 시작해 보세요."
+        return f"{greeting}{area_label} 영역도 '{level_label}' 수준이에요. 부담 없이 '{title}'로 이어가 보세요."
+    return f"{greeting}{area_label} 영역에서 '{title}'로 작은 변화를 시작해 보세요."
 
 
 # ---------------------------------------------------------------- LLM 호출
@@ -123,14 +138,22 @@ def _facts_lines(challenges: list[dict]) -> list[str]:
     return lines
 
 
-def build_prompt(challenges: list[dict], persona: dict | None) -> str:
-    persona = persona or {}
-    type_text = " - ".join(x for x in (persona.get("type_name"), persona.get("tagline")) if x) or "알 수 없음"
+def build_prompt(challenges: list[dict], persona: dict | None = None, user_name: str | None = None) -> str:
+    """
+    LLM에 줄 프롬프트. GSTI 유형 이름은 재미로 보는 결과라서 문구에 쓰지 않는다 (persona는 받지만 쓰지 않음).
+    사용자 이름이 있으면 '{이름}님'으로 부를 수 있게 알려 준다.
+    """
+    if user_name:
+        user_text = f"이름: {user_name}"
+        name_rule = f"사용자를 부를 때는 '{user_name}님'이라고 하고, 모든 문구에 넣지 말고 필요할 때만 쓴다."
+    else:
+        user_text = "이름을 모름"
+        name_rule = "사용자의 이름은 모르니 이름을 지어내지 않는다."
     facts = "\n".join(_facts_lines(challenges))
     return f"""너는 탄소 발자국 앱 'GreenStep'의 챌린지 추천 도우미다.
 
-[사용자 유형]
-{type_text}
+[사용자]
+{user_text}
 
 [추천할 챌린지 (아래 사실은 바꾸지 말 것)]
 {facts}
@@ -139,7 +162,8 @@ def build_prompt(challenges: list[dict], persona: dict | None) -> str:
 1. 챌린지마다 이 사용자에게 왜 맞는지 한국어 한두 문장({MAX_REASON_CHARS}자 이내)으로 쓴다. 친근한 말투(~요)를 쓴다.
 2. 위에 적힌 숫자 외에 새로운 숫자(절감량, 퍼센트, 횟수, 일수 등)를 절대 만들지 않는다.
 3. 챌린지 이름과 포인트를 바꾸지 않는다. 의학적·과학적 단정은 하지 않는다.
-4. 출력은 JSON 객체 하나만 쓴다. 키는 id, 값은 문구다. 예: {{"MOVE_2": "문구", "FOOD_1": "문구"}}"""
+4. {name_rule} 성향·유형 이름이나 그것을 빗댄 별명(식물·동물 비유 등)은 언급하지 않는다.
+5. 출력은 JSON 객체 하나만 쓴다. 키는 id, 값은 문구다. 예: {{"MOVE_2": "문구", "FOOD_1": "문구"}}"""
 
 
 # ---------------------------------------------------------------- 검증
@@ -147,9 +171,9 @@ def build_prompt(challenges: list[dict], persona: dict | None) -> str:
 _NUMBER = re.compile(r"\d+(?:\.\d+)?")
 
 
-def _allowed_numbers(challenges: list[dict]) -> set[str]:
-    """프롬프트 사실에 등장하는 숫자들 (id의 숫자 포함)."""
-    return set(_NUMBER.findall("\n".join(_facts_lines(challenges))))
+def _allowed_numbers(challenges: list[dict], user_name: str | None = None) -> set[str]:
+    """프롬프트 사실에 등장하는 숫자들 (id의 숫자 포함). 이름에 숫자가 있으면(예: user1) 그것도 허용한다."""
+    return set(_NUMBER.findall(" ".join(_facts_lines(challenges)) + " " + (user_name or "")))
 
 
 def _parse_json(text: str) -> dict:
@@ -177,25 +201,27 @@ def generate_reasons(
     challenges: list[dict],
     persona: dict | None = None,
     llm_call: Callable[[str], str] | None = None,
+    user_name: str | None = None,
 ) -> list[dict]:
     """
     선택된 챌린지마다 추천 이유를 만든다. 반환: challenges와 같은 순서의 [{"reason", "reason_source"}].
     LLM이 실패하거나 문구가 검증을 통과하지 못하면 그 항목은 고정 문구를 쓴다.
     llm_call은 테스트에서 가짜 LLM을 끼우기 위한 자리다 (기본은 Gemini 호출).
     """
-    fallback = [{"reason": build_fallback_reason(c), "reason_source": SOURCE_FALLBACK} for c in challenges]
+    user_name = sanitize_user_name(user_name)
+    fallback = [{"reason": build_fallback_reason(c, user_name), "reason_source": SOURCE_FALLBACK} for c in challenges]
     if not challenges or not llm_enabled():
         return fallback
 
     try:
-        raw = (llm_call or _call_gemini)(build_prompt(challenges, persona))
+        raw = (llm_call or _call_gemini)(build_prompt(challenges, persona, user_name))
         data = _parse_json(raw)
     except Exception as e:
         # 키 없음, 시간 초과, 형식 오류 등 어떤 실패든 추천 자체는 막지 않는다
         logger.warning("챌린지 추천 이유 LLM 실패 (고정 문구 사용): %s: %s", type(e).__name__, str(e)[:100])
         return fallback
 
-    allowed = _allowed_numbers(challenges)
+    allowed = _allowed_numbers(challenges, user_name)
     result = []
     for c, fb in zip(challenges, fallback):
         text = data.get(c["challenge_id"])

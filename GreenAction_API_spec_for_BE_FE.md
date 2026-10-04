@@ -38,10 +38,12 @@
   "shopping": "50k_to_150k",
   "eco_interest": "interested_not_tried",
   "goal_intent": "serious_reduction",
-  "user_id": 1
+  "user_id": 1,
+  "recent_challenge_completions": 0
 }
 ```
 `user_id`를 보내면 최근 30일 **확정(SUCCESS)** 영수증이 5건 이상일 때 실데이터로 계산하고, 모자라면 설문으로 계산합니다.
+`recent_challenge_completions`(선택, 기본 0)는 **최근 30일에 완료한 챌린지 수**(BE가 센 값)입니다. 설문은 처음 한 번만 하므로, 이 값이 2 이상이면 설문 답과 상관없이 태도 축이 **실행가(A, 70% 이상)**로 올라갑니다(내려가지는 않음).
 
 **응답 (200)**
 ```json
@@ -83,14 +85,14 @@
 | `source` | `"survey"`(설문 기반) / `"data"`(최근 30일 영수증 기반) |
 | `data_info` | `user_id`를 보냈을 때만 있음(없으면 `null`). `used`, 영수증 수, 최소 조건, `reason` |
 | `areas[]` | 이동·식품·카페·쇼핑 4개. `level` 1~5(매우 낮음~매우 높음)로 "Green Profile" 막대를 그림. `carbon_kg`는 월 예상 배출량 |
-| `persona` | **그린 유형**(4축 16유형, 식물·자연 테마). `type_code`(예 `DLSA`), 이름, 이모지, 한 줄 소개, 설명, 축 4개(`axes`, 축마다 선택된 쪽 `percent`(50~95)와 반대쪽 `opposite_percent`, 합 100 — MBTI식 비율 막대용. 기준선에서 멀수록 한쪽에 가깝고, 태도 축은 설문 답 조합별 고정값). `preferred_difficulty`는 추천에 쓰는 값이라 화면엔 안 보여도 됨 |
+| `persona` | **GSTI(Green Step Type Indicator) 유형**(4축 16유형, 식물·자연 테마). `type_code`(예 `DLSA`), 이름, 이모지, 한 줄 소개, 설명, 축 4개(`axes`, 축마다 선택된 쪽 `percent`(50~95)와 반대쪽 `opposite_percent`, 합 100 — MBTI식 비율 막대용. 기준선에서 멀수록 한쪽에 가깝고, 태도 축은 설문 답 조합별 고정값). `preferred_difficulty`는 추천에 쓰는 값이라 화면엔 안 보여도 됨 |
 | `focus_area` | 먼저 시작할 영역 키(`move`/`food`/`cafe`/`shop`), 모두 1레벨이면 `null` |
 | `baseline_carbon_kg` | 월 예상(또는 실제) 배출량 |
 | `reduction_rate`, `target_carbon_kg` | 이번 달 추천 목표. **"일단 구경만"이면 둘 다 `null`** → 목표 대신 기준 배출량만 보여 주세요 |
 | `message` | 각오에 맞춘 안내 문구 |
 
-- **그린 유형은 영수증이 쌓이면 바뀔 수 있습니다**(앞 세 축이 소비 데이터에서 나옴). "내 유형이 왜 바뀌었는지" 안내 문구를 화면에 두는 걸 권합니다.
-- **앱 문구에는 "MBTI"라는 말을 쓰지 말고 "그린 유형"**으로 불러 주세요(상표 문제 가능성).
+- **설문은 처음 한 번만 하고, 이후 GSTI는 데이터로 자동 변경됩니다**(앞 세 축은 영수증·소비 데이터, 태도 축은 챌린지 완료 이력). BE가 하루 1회 저장된 설문 답 + `user_id` + `recent_challenge_completions`로 `/api/profile`을 다시 호출해 갱신하는 방식을 권합니다. 유형이 바뀌었을 때 "무엇에서 무엇으로 바뀌었는지" 안내를 화면에 두는 걸 권합니다.
+- **앱 문구에는 "MBTI"라는 말을 쓰지 말고 "GSTI"**로 불러 주세요. MBTI는 Myers & Briggs Foundation의 등록상표입니다(정품 검사만 지칭하도록 사용 지침이 있음). GSTI는 우리가 만든 별개의 이름이고 글자 구성(W/D·L/F·M/S·A/E)과 유형 이름도 다르지만, 정식 출시 전에는 특허정보검색(KIPRIS)에서 유사 상표를 확인해 주세요.
 - 오류: 필드 타입이 틀리면 `422`(어느 필드인지 알려 줌), 서버 내부 문제는 `500`과 원인.
 
 ## 3. `POST /api/challenges/recommend` — 맞춤 챌린지 3개
@@ -99,11 +101,13 @@
 ```json
 {
   "profile": { "...": "/api/profile 응답 그대로" },
-  "exclude_challenge_ids": ["MOVE_1"]
+  "exclude_challenge_ids": ["MOVE_1"],
+  "user_name": "테스트유저"
 }
 ```
 - `profile`은 **필수**입니다. `user_id`만 보내면 `400`입니다(실데이터 기반 추천은 `/api/profile`을 `user_id`와 함께 먼저 호출한 뒤 그 응답을 넘겨 주세요).
 - `exclude_challenge_ids`: 이미 부여했거나 완료한 챌린지를 빼고 싶을 때.
+- `user_name`(선택): 추천 이유 문구에서 "OO님"으로 부를 이름. GSTI 유형 이름(예: 느긋한 고구마)은 재미로 보는 결과라 추천 이유 문구에는 쓰지 않습니다. 이름이 없으면 이름 없이 작성하고, 한글·영문·숫자·공백만 남기고 20자로 줄여서 사용합니다. AI가 쓰지 못하는 상황이면 고정 문구 앞에 "OO님, "이 붙습니다.
 
 **응답 (200)**
 ```json

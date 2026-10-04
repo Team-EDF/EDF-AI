@@ -24,19 +24,21 @@ def recommend_challenges(
     profile: dict | None,
     exclude_ids: list[str] | None = None,
     llm_call: Callable[[str], str] | None = None,
+    user_name: str | None = None,
 ) -> dict:
     """
     프로필로 챌린지 3개와 추천 이유를 만든다.
 
     profile 예시: {"source": "survey", "areas": [{"key": "move", "level": 4}, ...],
                    "persona": {"type_name": "...", "preferred_difficulty": 2}}
+    user_name이 있으면 추천 이유 문구에서 "{이름}님"으로 부른다 (GSTI 유형 이름은 문구에 쓰지 않는다).
     프로필이 없으면 ValueError (user_id만으로 추천하는 기능은 아직 지원하지 않는다).
     """
     if not profile or not profile.get("areas"):
         raise ValueError("profile.areas가 필요합니다. (user_id만으로 추천하는 기능은 실데이터 전환 후 지원)")
 
     selected = select_challenges(profile, exclude_ids)
-    reasons = generate_reasons(selected, profile.get("persona"), llm_call=llm_call)
+    reasons = generate_reasons(selected, profile.get("persona"), llm_call=llm_call, user_name=user_name)
 
     challenges = []
     for item, reason in zip(selected, reasons):

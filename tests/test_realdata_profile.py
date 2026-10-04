@@ -253,5 +253,5 @@ def test_api_passes_user_id_and_returns_data_info():
     assert r.status_code == 200
     assert r.json()["source"] == "data" and r.json()["data_info"]["receipts_in_window"] == 8
     answers = build_mock.call_args.args[0]
-    assert "user_id" not in answers and answers["transport"] == "car"       # user_id는 설문 답변에 섞이지 않는다
-    assert build_mock.call_args.kwargs == {"user_id": 7}
+    assert "user_id" not in answers and "recent_challenge_completions" not in answers and answers["transport"] == "car"  # 설문 답변에 섞이지 않는다
+    assert build_mock.call_args.kwargs == {"user_id": 7, "recent_challenge_completions": 0}

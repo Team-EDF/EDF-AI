@@ -195,6 +195,11 @@ ACTION_PERCENT = {
 }
 UNKNOWN_ACTION_PERCENT = 50        # 답변이 비었거나 알 수 없으면 판단 근거가 없어 반반
 
+# 설문은 처음 한 번만 하므로, 태도 축은 실제 행동(최근 30일 챌린지 완료)으로도 올라갈 수 있다.
+# 완료가 이 횟수 이상이면 설문 답과 상관없이 실행가(A)이고, 비율은 최소 ACTIVE_ACTION_PERCENT 이상이다. (내려가지는 않는다)
+ACTIVE_COMPLETIONS_MIN = 2
+ACTIVE_ACTION_PERCENT = 70
+
 
 def _upper_pole_percent(value_kg: float, threshold_kg: float, floor_kg: float) -> int:
     """기준선(threshold) 대비 value의 로그 비율로 "기준선 위쪽 극(D/F/S)"에 가까운 정도(5~95%)를 구한다."""
@@ -208,10 +213,19 @@ def _axis_threshold_kg(area_key: str, min_level: int) -> float:
     return float(LEVEL_CUTS[area_key][min_level - 2])
 
 
+def _action_percent(eco_interest: str | None, goal_intent: str | None, recent_completions: int) -> int:
+    """태도 축의 실행가(A) 비율: 설문 답 조합별 고정값, 최근 챌린지를 꾸준히 완료했으면 최소 ACTIVE_ACTION_PERCENT."""
+    base = ACTION_PERCENT.get((eco_interest, goal_intent), UNKNOWN_ACTION_PERCENT)
+    if recent_completions >= ACTIVE_COMPLETIONS_MIN:
+        return max(base, ACTIVE_ACTION_PERCENT)
+    return base
+
+
 def get_axis_percents(
     carbons: dict[str, float],
     eco_interest: str | None,
     goal_intent: str | None,
+    recent_completions: int = 0,
 ) -> list[int]:
     """
     축별 비율을 [이동 D%, 식탁 F%, 소비 S%, 태도 A%] 순서로 돌려준다 (각 값 = 그 글자 쪽에 가까운 정도).
@@ -222,7 +236,7 @@ def get_axis_percents(
         _upper_pole_percent(carbons["move"], _axis_threshold_kg("move", MOVE_DRIVER_MIN_LEVEL), 0.1),
         _upper_pole_percent(carbons["food"] + carbons["cafe"], TABLE_FEAST_THRESHOLD_KG, 1.0),
         _upper_pole_percent(carbons["shop"], _axis_threshold_kg("shop", SHOP_SHOPPER_MIN_LEVEL), 0.5),
-        ACTION_PERCENT.get((eco_interest, goal_intent), UNKNOWN_ACTION_PERCENT),
+        _action_percent(eco_interest, goal_intent, recent_completions),
     ]
 
 
@@ -241,14 +255,21 @@ def classify_shop_axis(shop_level: int) -> str:
     return "S" if shop_level >= SHOP_SHOPPER_MIN_LEVEL else "M"
 
 
-def classify_attitude_axis(eco_interest: str | None, goal_intent: str | None) -> str:
+def classify_attitude_axis(
+    eco_interest: str | None,
+    goal_intent: str | None,
+    recent_completions: int = 0,
+) -> str:
     """
     태도 축: 실천 의지가 있으면 A(실행가), 아니면 E(탐색가).
     - 확실히 줄여보기 -> A
     - 가볍게 시작 -> 친환경 경험·관심이 있으면 A, 관심 없음이면 E
     - 일단 구경만 -> E
     - 답변이 비었거나 알 수 없는 값 -> 판단 근거가 없으니 E
+    - 단, 최근 30일에 챌린지를 ACTIVE_COMPLETIONS_MIN번 이상 완료했으면 설문 답과 상관없이 A
     """
+    if recent_completions >= ACTIVE_COMPLETIONS_MIN:
+        return "A"
     if eco_interest not in VALID_ECO_INTERESTS or goal_intent not in VALID_GOAL_INTENTS:
         return "E"
     if goal_intent == "serious_reduction":
@@ -274,17 +295,18 @@ def build_green_type(
     carbons: dict[str, float],
     eco_interest: str | None,
     goal_intent: str | None,
+    recent_completions: int = 0,
 ) -> dict:
     """영역별 레벨·탄소량과 태도 답변으로 그린 유형(4축 코드 + 이름·설명)을 만든다."""
     letters = [
         classify_move_axis(levels["move"]),
         classify_table_axis(carbons["food"], carbons["cafe"]),
         classify_shop_axis(levels["shop"]),
-        classify_attitude_axis(eco_interest, goal_intent),
+        classify_attitude_axis(eco_interest, goal_intent, recent_completions),
     ]
     code = "".join(letters)
     info = GREEN_TYPES[code]
-    upper_percents = get_axis_percents(carbons, eco_interest, goal_intent)
+    upper_percents = get_axis_percents(carbons, eco_interest, goal_intent, recent_completions)
     axes = []
     for axis, letter, upper_letter, upper_percent in zip(AXES, letters, PERCENT_LETTERS, upper_percents):
         # 선택된 글자 쪽 비율(percent)과 반대쪽 비율(opposite_percent). 합은 항상 100.
@@ -333,14 +355,20 @@ def _merge_with_data(survey_values: dict[str, dict], data_areas: dict[str, dict]
     return merged
 
 
-def build_profile(answers: dict, conn=None, user_id: int | None = None) -> dict:
+def build_profile(
+    answers: dict,
+    conn=None,
+    user_id: int | None = None,
+    recent_challenge_completions: int = 0,
+) -> dict:
     """
     Green Profile(영역별 레벨 + 그린 유형 + 목표)을 만든다.
 
     - 기본은 설문 답변으로 계산한다 (source="survey").
     - user_id가 있고 최근 30일 확정 영수증이 충분하면(realdata_service.DATA_MIN_RECEIPTS건 이상)
       실제 소비 데이터로 계산한다 (source="data"). 모자라면 설문으로 계산하고 이유를 data_info에 남긴다.
-      성향(실행가/탐색가, 선호 난이도)은 설문 답변(eco_interest, goal_intent)에서 계속 가져온다.
+      성향(실행가/탐색가, 선호 난이도)은 설문 답변(eco_interest, goal_intent)에서 가져오되, 설문은 처음 한 번만 하므로
+      최근 30일 챌린지 완료 수(recent_challenge_completions)가 ACTIVE_COMPLETIONS_MIN 이상이면 실행가(A)로 올린다.
     """
     survey = calculate_onboarding_target(answers, conn=conn)
     area_values = _survey_area_values(survey)
@@ -383,7 +411,9 @@ def build_profile(answers: dict, conn=None, user_id: int | None = None) -> dict:
     return {
         "source": source,
         "areas": areas,
-        "persona": build_green_type(levels, carbons, answers.get("eco_interest"), answers.get("goal_intent")),
+        "persona": build_green_type(
+            levels, carbons, answers.get("eco_interest"), answers.get("goal_intent"), recent_challenge_completions
+        ),
         "focus_area": get_focus_area(levels),
         "baseline_carbon_kg": baseline_carbon_kg,
         "reduction_rate": goal["reduction_rate"],

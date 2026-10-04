@@ -40,6 +40,7 @@ def recommend(request: RecommendRequest):
         return recommend_challenges(
             request.profile.model_dump(),
             exclude_ids=request.exclude_challenge_ids,
+            user_name=request.user_name,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

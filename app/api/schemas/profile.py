@@ -1,6 +1,6 @@
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.api.schemas.onboarding import OnboardingAnswers
 
@@ -10,6 +10,8 @@ class ProfileRequest(OnboardingAnswers):
     user_id를 주면 최근 30일 확정 영수증이 충분할 때 실데이터로 프로필을 계산한다.
     """
     user_id: Optional[int] = None
+    # 최근 30일에 완료한 챌린지 수 (BE가 센 값). 챌린지를 꾸준히 완료하면 태도 축이 실행가(A)로 올라간다.
+    recent_challenge_completions: int = Field(default=0, ge=0, le=1000)
 
 
 class ProfileArea(BaseModel):
