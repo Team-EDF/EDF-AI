@@ -22,7 +22,13 @@ from app.services.household_bill_reader import (
     month_in_range,
     read_bill,
 )
-from app.services.household_carbon import FACTORS, SPEND_FACTOR_FALLBACK, calculate_household_carbon
+from app.services.household_carbon import (
+    FACTORS,
+    HEAT_SPEND_FACTOR,
+    SPEND_FACTOR_FALLBACK,
+    calculate_household_carbon,
+    heat_to_gcal,
+)
 
 TODAY = date(2026, 10, 4)
 
@@ -75,6 +81,31 @@ def test_zero_negative_and_bad_values_are_ignored():
     result = calculate_household_carbon(
         {"electricity_kwh": 0, "water_m3": -5, "gas_m3": "abc", "heat_gcal": None}, spend_factors=SPEND_FACTOR_FALLBACK)
     assert result["total_kg"] == 0 and all(item["basis"] == "none" for item in result["items"])
+
+
+def test_heat_spend_factor_comes_from_kdhc_tariff_not_gas():
+    # 146.9 kgCO2e/Gcal / (112.32 원/Mcal x 1000 Mcal/Gcal) = 0.001308 kgCO2e/원
+    assert abs(HEAT_SPEND_FACTOR - 146.9 / 112320) < 1e-12
+    assert abs(SPEND_FACTOR_FALLBACK["heat"] - 0.001308) < 1e-6
+    assert SPEND_FACTOR_FALLBACK["heat"] < SPEND_FACTOR_FALLBACK["gas"] * 0.6      # 도시가스비 계수(약 0.00265)로 근사하던 때의 절반
+    result = calculate_household_carbon({"heat_krw": 100000}, spend_factors=SPEND_FACTOR_FALLBACK)
+    heat = next(item for item in result["items"] if item["key"] == "heat")
+    assert heat["basis"] == "spend" and heat["carbon_kg"] == round(100000 * HEAT_SPEND_FACTOR, 2)   # 약 130.8
+
+
+def test_heat_units_convert_to_gcal():
+    assert heat_to_gcal(823.6, "Mcal") == 0.8236
+    assert heat_to_gcal(0.8236, "Gcal") == 0.8236 and heat_to_gcal(0.8236, None) == 0.8236
+    assert abs(heat_to_gcal(3.4482, "GJ") - 0.8236) < 1e-3                 # 1 Gcal = 4.1868 GJ
+    assert abs(heat_to_gcal(3448.2, "MJ") - 0.8236) < 1e-3
+    assert abs(heat_to_gcal(957.9, "kWh") - 0.8236) < 1e-3                 # 1 Gcal = 1,163 kWh
+    assert heat_to_gcal(12, "m3") is None and heat_to_gcal(12, "톤") is None  # 유량은 열량이 아니라 환산 불가
+    assert heat_to_gcal(None, "Mcal") is None and heat_to_gcal(-1, "Mcal") is None
+
+
+def test_mcal_bill_is_read_as_gcal():
+    result = judge_bill(_reading(heat=UtilityReading(usage=823.6, unit="Mcal", krw=105000)), TODAY)
+    assert result["values"]["heat_gcal"] == 0.8236 and result["values"]["heat_krw"] == 105000
 
 
 def test_all_utilities_have_a_factor_and_unit():

@@ -14,6 +14,7 @@ from typing import Callable, Optional
 
 from pydantic import BaseModel, Field
 
+from app.services.household_carbon import heat_to_gcal
 from app.services.challenge_verifier import (
     BadImages,
     VerifierUnavailable,
@@ -40,7 +41,8 @@ VALUE_KEYS = tuple(LIMITS)
 
 
 class UtilityReading(BaseModel):
-    usage: Optional[float] = Field(default=None, description="사용량 (전기 kWh, 수도·도시가스 m3, 지역난방 Gcal)")
+    usage: Optional[float] = Field(default=None, description="고지서에 인쇄된 사용량 숫자 (전기 kWh, 수도·도시가스 m3, 지역난방은 인쇄된 단위 그대로)")
+    unit: Optional[str] = Field(default=None, description="지역난방 사용량에 인쇄된 단위(Gcal, Mcal, GJ, MJ, kWh, m3, 톤 등). 다른 항목은 null")
     krw: Optional[int] = Field(default=None, description="해당 항목 금액(원, 정수)")
 
 
@@ -70,7 +72,9 @@ def build_prompt(today: date, count: int) -> str:
 4. electricity: 전기 사용량(kWh)과 전기요금(원). 한전 고지서에는 "사용량 kWh"와 "청구금액"이 있다. 아파트 관리비 명세서의 "전기료"/"세대전기료"는 금액이다.
 5. water: 수도 사용량(m3 또는 톤)과 수도요금(원). 명세서의 "수도료"/"급수비".
 6. gas: 도시가스 사용량(m3)과 가스요금(원). 명세서의 "가스사용료". 난방용 지역난방이 아니라 도시가스만.
-7. heat: 지역난방 사용량(Gcal)과 난방비(원). 명세서의 "난방비"/"급탕비"는 지역난방 항목이다. 개별난방(도시가스) 아파트에는 없다.
+7. heat: 지역난방 사용열량과 난방비(원). 명세서의 "난방비"/"급탕비"는 지역난방 항목이다. 개별난방(도시가스) 아파트에는 없다.
+   사용열량은 단위를 바꾸지 말고 인쇄된 숫자 그대로 usage 에 넣고, 인쇄된 단위(Gcal, Mcal, GJ, MJ, kWh, m3, 톤 중 하나)를 unit 에 적는다. 단위가 안 보이면 unit 은 null.
+   (환산은 우리 코드가 한다. "온수 사용량(m3)"은 열량이 아니므로 난방 사용열량으로 읽지 않는다.)
    공용 부분(공용전기료·공동수도료·공동난방비 등)은 세대 사용량이 아니므로 읽지 않는다. 세대가 쓴 "개별 사용료"만 읽는다.
 8. total_krw: 이번 달 총 청구 금액(원).
 9. looks_edited: 숫자·글자를 지우거나 덧쓴 흔적, 합성의 뚜렷한 흔적이 있으면 true. 확실할 때만 true.
@@ -120,7 +124,7 @@ def flatten_values(reading: BillReading) -> dict:
         "electricity_kwh": reading.electricity.usage, "electricity_krw": reading.electricity.krw,
         "water_m3": reading.water.usage, "water_krw": reading.water.krw,
         "gas_m3": reading.gas.usage, "gas_krw": reading.gas.krw,
-        "heat_gcal": reading.heat.usage, "heat_krw": reading.heat.krw,
+        "heat_gcal": heat_to_gcal(reading.heat.usage, reading.heat.unit), "heat_krw": reading.heat.krw,
     }
 
 
@@ -142,7 +146,12 @@ def clean_values(values: dict) -> tuple[dict, list[str]]:
             cleaned[key] = None
             dropped.append(key)
         else:
-            cleaned[key] = round(number, 2) if key.endswith(("kwh", "m3", "gcal")) else int(round(number))
+            if key.endswith("gcal"):
+                cleaned[key] = round(number, 4)   # Mcal 고지서(예: 823.6 Mcal)를 환산해도 자릿수가 유지되도록
+            elif key.endswith(("kwh", "m3")):
+                cleaned[key] = round(number, 2)
+            else:
+                cleaned[key] = int(round(number))
     return cleaned, dropped
 
 

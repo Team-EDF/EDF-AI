@@ -33,13 +33,38 @@ FACTORS = {
 }
 UTILITY_KEYS = tuple(FACTORS)
 
-# 금액만 있을 때 쓰는 원당 계수 (kgCO2eq / 원). DB 가정에너지 중분류 값과 같다 (DB를 못 읽을 때의 대체값).
+# 지역난방은 DB 중분류에 없어서 열요금 단가로 원당 계수를 만든다.
+# 한국지역난방공사 주택용 사용요금 단일요금 112.32원/Mcal (2024.7.1 적용, 이후 동결 보도). 1 Gcal = 1,000 Mcal.
+# 원당 계수 = (kgCO2eq/Gcal) / (원/Gcal) = 146.9 / 112,320 = 0.001308 kgCO2eq/원
+# 한계: 난방비에는 기본요금(계약면적 ㎡당 52.40원)도 포함돼 있어 사용량이 적은 달은 열량이 과대 추정된다.
+#       민간 지역난방 사업자는 단가가 다르다.
+HEAT_TARIFF_KRW_PER_MCAL = 112.32
+HEAT_SPEND_FACTOR = FACTORS["heat"]["factor"] / (HEAT_TARIFF_KRW_PER_MCAL * 1000)
+
+# 금액만 있을 때 쓰는 원당 계수 (kgCO2eq / 원). 전기·수도·가스는 DB 가정에너지 중분류 값과 같다 (DB를 못 읽을 때의 대체값).
 SPEND_FACTOR_FALLBACK = {
     "electricity": 0.0025380370,   # 전기비
     "water": 0.0001928440,         # 수도비
     "gas": 0.0026474220,           # 도시가스비
-    "heat": 0.0026474220,          # 지역난방은 따로 없어 도시가스비 계수로 근사 (추정임을 표시)
+    "heat": HEAT_SPEND_FACTOR,     # 지역난방: 열요금 단가 기준 (위 설명)
 }
+
+# 고지서에 찍히는 열량 단위 -> Gcal 환산 (1 Gcal = 1,000 Mcal = 4.1868 GJ = 1,163 kWh). 유량(m3, 톤)은 열량이 아니라 환산 불가.
+HEAT_UNIT_TO_GCAL = {
+    "gcal": 1.0, "mcal": 0.001, "kcal": 0.000001,
+    "gj": 1 / 4.1868, "mj": 1 / 4186.8,
+    "mwh": 1 / 1.163, "kwh": 1 / 1163,
+}
+
+
+def heat_to_gcal(usage, unit: str | None) -> float | None:
+    """지역난방 사용열량을 Gcal 로 환산한다. 단위가 없으면 Gcal 로 본다. 열량이 아닌 단위(m3, 톤)는 None."""
+    number = _number(usage)
+    if number is None:
+        return None
+    key = (unit or "gcal").strip().lower().replace(" ", "").replace("㎉", "kcal")
+    ratio = HEAT_UNIT_TO_GCAL.get(key)
+    return None if ratio is None else number * ratio
 _SPEND_DB_NAMES = {"electricity": "전기비", "water": "수도비", "gas": "도시가스비"}
 
 _spend_cache: dict | None = None
@@ -72,7 +97,6 @@ def get_spend_factors() -> dict:
         for key, db_name in _SPEND_DB_NAMES.items():
             if db_name in rows:
                 factors[key] = rows[db_name]
-        factors["heat"] = factors["gas"]
     except Exception as e:  # noqa: BLE001
         logger.warning("원당 탄소계수를 DB에서 읽지 못해 상수를 씁니다: %s: %s", type(e).__name__, str(e)[:100])
     _spend_cache = factors

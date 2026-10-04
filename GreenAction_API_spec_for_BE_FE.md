@@ -215,10 +215,11 @@ BE는 부여할 때 이 값을 챌린지에 스냅샷으로 저장해 두고 규
 - 실패 `code`: `NOT_A_BILL`, `UNREADABLE`, `EDITED`, `MONTH_UNKNOWN`, `MONTH_OUT_OF_RANGE`(최근 13개월 밖), `NO_VALUES`
 - 세대 개별 사용료만 읽고 공용요금은 제외한다. 값이 상식 범위를 벗어나면 버리고 `note`로 알린다. 사진 형식 문제 `400`, AI 불가 `503`.
 - `fingerprint`는 (월 + 읽은 값) 해시이며 BE가 같은 고지서의 다른 계정 재사용을 막는 데 쓴다.
+- **지역난방 단위:** 고지서는 Mcal(가장 흔함)·Gcal·GJ·MJ 등으로 적혀 있다. 판독은 인쇄된 단위를 읽어 `heat_gcal`(Gcal)로 환산해서 돌려준다(1 Gcal = 1,000 Mcal = 4.1868 GJ = 1,163 kWh, 소수 넷째 자리). 단위를 알 수 없거나 열량이 아닌 유량(㎥, 톤)이면 `heat_gcal`은 `null`이다. BE/DB는 계속 Gcal로 저장하고, 앱 입력 화면만 Mcal/Gcal/GJ 중 고른 단위를 Gcal로 바꿔서 보낸다.
 
 ### `POST /api/household/carbon` (JSON)
 `electricity_kwh/_krw`, `water_m3/_krw`, `gas_m3/_krw`, `heat_gcal/_krw`(모두 선택)로 한 달 탄소를 계산한다.
-사용량이 있으면 `사용량 × 배출계수`(전기 0.4173, 수도 0.237, 가스 2.176, 지역난방 146.9), 없고 금액만 있으면 원당 계수로 추정(`basis: "spend"`).
+사용량이 있으면 `사용량 × 배출계수`(전기 0.4173, 수도 0.237, 가스 2.176, 지역난방 146.9), 없고 금액만 있으면 원당 계수로 추정(`basis: "spend"`). 지역난방의 원당 계수는 열요금 단가(112.32원/Mcal)로 만든 0.001308 kgCO2e/원이다.
 응답: `total_kg`, `items[{key,label,usage,unit,krw,carbon_kg,basis}]`, `estimated`, `note`. 근거와 한계는 `GreenAction_household_evidence.md`.
 
 ## 5. 호출 팁
