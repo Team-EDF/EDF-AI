@@ -16,8 +16,10 @@
 | AI-1.4 `POST /api/profile` | 완료 (일정보다 3일 앞) | 로컬 서버(8000)에서 동작 확인 |
 | AI-2.1 카탈로그 JSON + 로더 | 완료 (10/4) | `app/data/challenge_catalog.json`, `GET /api/challenges/catalog`, 테스트 15개 |
 | AI-2.2 챌린지 선택 규칙 | 완료 (10/4) | `app/services/challenge_selector.py`, 테스트 16개 |
+| AI-2.3 설명 문구 (LLM + 폴백) | 완료 (10/4) | `app/services/challenge_explainer.py`, 숫자 지어내기 차단, 실제 Gemini 호출 확인 |
+| AI-2.4 `POST /api/challenges/recommend` | 완료 (10/4) | `challenge_service.py`, 테스트 19개. **AI API 1차 완성 → BE/FE에 명세 공유 가능** |
 | 개인 저장소 구성 | 완료 (10/4) | `gunmyeol/edf-ai·be·fe` 비공개, 작업 폴더 `C:\edf-work` |
-| 다음 | AI-2.3 설명 문구(LLM+폴백), AI-2.4 `/recommend` | 10/4~5 |
+| 다음 | AI-4.2 API 명세 문서 정리·공유, AI-3.1 실데이터 전환(X-3 선행), AI-3.2 더미 데이터 테스트 | 10/5~8 |
 
 ## 0. 전제
 

@@ -120,7 +120,8 @@
 - **`focus_area`:** 레벨이 가장 높은 영역(동점이면 이동 > 식품 > 쇼핑 > 카페 순)으로, "먼저 시작할 영역"입니다. 전부 1레벨이면 `null`입니다.
 
 ### 2-2. `POST /api/challenges/recommend` – 맞춤 챌린지 3개
-**요청** (둘 중 하나 이상)
+**구현 완료.** 지금은 **`profile`이 필수**입니다(설문 기반 추천).
+**요청**
 ```json
 {
   "profile": { "areas": [ { "key": "move", "level": 4 }, { "key": "cafe", "level": 2 } ],
@@ -130,8 +131,8 @@
   "exclude_challenge_ids": ["MOVE_1"]
 }
 ```
-- `profile`: `/api/profile` 응답에서 `areas`, `persona`, `focus_area`만 그대로 전달합니다.
-- `user_id`: 실데이터가 충분하면 AI가 DB를 직접 읽어 프로필을 다시 계산합니다.
+- `profile`: `/api/profile` 응답을 **통째로 넘겨도 됩니다**(모르는 필드는 무시). 추천에는 `areas`(영역별 `key`, `level`)와 `persona.preferred_difficulty`, `persona.type_name`/`tagline`(문구용)만 씁니다. `preferred_difficulty`가 없으면 가장 쉬운 1로 처리합니다.
+- `user_id`: **지금은 `user_id`만으로 추천할 수 없습니다.** 실데이터 전환(2단계) 이후에 "AI가 DB를 직접 읽어 프로필을 다시 계산"하는 용도로 쓸 예정입니다. `profile` 없이 보내면 `400`과 안내 문구를 돌려줍니다.
 - `exclude_challenge_ids`: 이미 부여했거나 완료한 챌린지를 제외합니다.
 
 **응답**
@@ -141,20 +142,26 @@
   "intro": "AI가 생활패턴을 분석했어요.",
   "challenges": [
     {
+      "slot": 1,
       "challenge_id": "MOVE_2",
-      "area": "move", "difficulty": 2,
+      "area": "move", "area_label": "이동", "difficulty": 2,
       "title": "대중교통 주 2회 이용하기",
-      "target_count": 2, "period": "week",
-      "verification": "AUTO_TRANSIT",
-      "points": 70, "est_saving_kg": 7.92,
-      "reason": "이동이 가장 큰 비중을 차지해서, 이번 주는 대중교통부터 시작해 보세요."
+      "description": "이번 주 대중교통을 2회 이용해 보세요.",
+      "target_count": 2, "unit": "회", "period": "week",
+      "verification": "AUTO_TRANSIT", "verification_next": null, "daily_check_limit": null,
+      "points": 70, "est_saving_kg": 7.92, "saving_basis": "MOVE_1 값 x 2회",
+      "reason": "바쁜 일상 속에서도 대중교통을 이용하시면 이동 탄소 발자국을 줄일 수 있어요. 알뜰하게 포인트도 챙겨가세요!",
+      "reason_source": "llm"
     }
   ]
 }
 ```
-- 항상 3개를 반환합니다. 후보가 부족하면 `exclude`를 무시하지 않고 가능한 만큼만 반환합니다.
-- `reason`은 LLM이 쓰는 설명 문구이고, 실패하면 고정 문구로 대체되어 응답은 항상 정상입니다.
-- 난이도·포인트·절감량·인증방식은 카탈로그의 고정값이며 LLM이 바꾸지 않습니다.
+챌린지 항목은 카탈로그 항목(2-3)에 `slot`, `reason`, `reason_source`가 더해진 모양입니다. 위 `reason`은 실제 Gemini 응답 예시입니다.
+- 가능하면 3개를 반환합니다. 후보가 부족하면(카탈로그 15개가 모두 제외되는 경우 등) `exclude`를 무시하지 않고 가능한 만큼만 반환합니다.
+- **`reason`(추천 이유):** LLM(Gemini)이 사용자 유형에 맞춰 쓰는 한두 문장입니다. 키 없음, 시간 초과(6초), 형식 오류일 때는 고정 문구로 대체되고 `reason_source`가 `"fallback"`이 되어 **응답은 항상 정상(200)**입니다.
+- **숫자 보호:** LLM이 입력으로 준 적 없는 숫자(예: 절감량, 퍼센트)를 지어내면 그 문구는 버리고 고정 문구를 씁니다. 난이도·포인트·절감량·인증방식은 카탈로그의 고정값이며 LLM이 바꾸지 않습니다.
+- **응답 시간:** 서버가 켜질 때 Gemini 클라이언트를 미리 준비하므로 보통 1~3초입니다. `CHALLENGE_LLM_ENABLED=false` 환경변수로 LLM을 끄고 고정 문구만 쓸 수도 있습니다.
+- **오류:** 입력 형식이 틀리면 `422`(어느 필드인지 알려 줌), `profile`이 없으면 `400`, 서버 내부 문제는 `500`과 원인입니다.
 - **선택 규칙 (구현 완료, `app/services/challenge_selector.py`, 순수 규칙이라 같은 입력이면 같은 결과):**
   1. 줄일 여지가 있는 영역(식품·카페·쇼핑은 레벨 2 이상, 이동은 자가용 중심인 레벨 3 이상)을 레벨 높은 순으로, 동점이면 이동 > 식품 > 쇼핑 > 카페 순입니다.
   2. 그런 영역이 3개 미만이면 "생활" 영역을 보조로 1개 넣고, 그래도 모자라면 나머지 영역으로 채웁니다. 이미 대중교통 중심인 사람에게는 이동 챌린지를 먼저 권하지 않습니다(하던 행동에 포인트만 주게 되므로).
