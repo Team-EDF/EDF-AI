@@ -28,7 +28,6 @@ from app.services.carbon import (
 )
 from app.services.classifier import MerchantClassifier
 from app.services.clova_ocr_service import extract_receipt_from_clova
-# from app.services.image_storage_service import save_receipt_image
 from app.services.image_storage_service import save_receipt_image, describe_storage_error
 from app.services.ocr_fallback_service import extract_receipt_with_fallback
 
@@ -396,12 +395,6 @@ async def ocr_classify(
     # ========================================================
     # 영수증 원본 이미지 저장 (실패해도 분류는 계속 진행)
     # ========================================================
-
-    # image_url = None
-    # try:
-    #     image_url = save_receipt_image(image_bytes, image.filename or "receipt.jpg")
-    # except Exception:
-    #     logger.exception("영수증 이미지 저장 실패 (분류는 계속 진행)")
 
     image_url = None
     image_save_error = None

@@ -11,12 +11,15 @@
   있는 값이 아니면 그 문구는 버리고 폴백을 쓴다. 난이도·포인트·절감량은 카탈로그의 고정값이다.
 """
 import json
+import logging
 import os
 import re
 import threading
 from typing import Callable
 
 from app.services.profile_service import LEVEL_LABELS
+
+logger = logging.getLogger(__name__)
 
 GEMINI_MODEL = "gemini-2.5-flash"
 # 호출 한 번이 보통 1~2초이고, 이 시간을 넘기면 고정 문구로 대체한다
@@ -92,7 +95,7 @@ def warm_up() -> None:
     try:
         _get_client()
     except Exception as e:
-        print(f"[챌린지 LLM] warm-up 실패 (고정 문구로 동작): {type(e).__name__}: {str(e)[:100]}")
+        logger.warning("챌린지 LLM warm-up 실패 (고정 문구로 동작): %s: %s", type(e).__name__, str(e)[:100])
 
 
 def _call_gemini(prompt: str) -> str:
@@ -187,8 +190,9 @@ def generate_reasons(
     try:
         raw = (llm_call or _call_gemini)(build_prompt(challenges, persona))
         data = _parse_json(raw)
-    except Exception:
+    except Exception as e:
         # 키 없음, 시간 초과, 형식 오류 등 어떤 실패든 추천 자체는 막지 않는다
+        logger.warning("챌린지 추천 이유 LLM 실패 (고정 문구 사용): %s: %s", type(e).__name__, str(e)[:100])
         return fallback
 
     allowed = _allowed_numbers(challenges)

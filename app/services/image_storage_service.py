@@ -25,20 +25,6 @@ def _build_object_key(filename: str) -> str:
     return f"{S3_UPLOAD_PREFIX}/{uuid.uuid4()}{ext}"
 
 
-# def _save_to_s3(image_bytes: bytes, filename: str) -> str | None:
-#     """S3에 이미지 업로드, 성공 시 접근 가능한 URL 반환. 실패 시 None."""
-#     import boto3
-#     from botocore.exceptions import ClientError
-#
-#     key = _build_object_key(filename)
-#     try:
-#         client = boto3.client("s3", region_name=AWS_REGION)
-#         client.put_object(Bucket=S3_BUCKET_NAME, Key=key, Body=image_bytes)
-#         return f"https://{S3_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{key}"
-#     except ClientError:
-#         logger.exception("S3 이미지 업로드 실패: key=%s", key)
-#         return None
-
 def _save_to_s3(image_bytes: bytes, filename: str) -> str:
     """S3에 이미지 업로드, 성공 시 URL 반환. 실패 시 예외를 그대로 발생시킨다."""
     import boto3
@@ -51,19 +37,6 @@ def _save_to_s3(image_bytes: bytes, filename: str) -> str:
     client.put_object(Bucket=S3_BUCKET_NAME, Key=key, Body=image_bytes)
     return f"https://{S3_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{key}"
 
-
-# def _save_to_local_disk(image_bytes: bytes, filename: str) -> str | None:
-#     """로컬 디스크에 이미지 저장, 성공 시 상대 경로 반환. 실패 시 None."""
-#     ext = Path(filename).suffix or ".jpg"
-#     saved_name = f"{uuid.uuid4()}{ext}"
-#     try:
-#         LOCAL_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-#         target = LOCAL_UPLOAD_DIR / saved_name
-#         target.write_bytes(image_bytes)
-#         return str(target)
-#     except OSError:
-#         logger.exception("로컬 이미지 저장 실패: filename=%s", filename)
-#         return None
 
 def _save_to_local_disk(image_bytes: bytes, filename: str) -> str:
     ext = Path(filename).suffix or ".jpg"
