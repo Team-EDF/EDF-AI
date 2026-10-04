@@ -52,11 +52,11 @@ def test_usage_based_carbon_uses_official_factors():
         {"electricity_kwh": 300, "water_m3": 10, "gas_m3": 20, "heat_gcal": None}, spend_factors=SPEND_FACTOR_FALLBACK)
     by_key = {item["key"]: item for item in result["items"]}
     assert by_key["electricity"]["carbon_kg"] == round(300 * 0.4173, 2)      # 125.19
-    assert by_key["water"]["carbon_kg"] == round(10 * 0.332, 2)               # 3.32
+    assert by_key["water"]["carbon_kg"] == round(10 * 0.237, 2)               # 2.37
     assert by_key["gas"]["carbon_kg"] == round(20 * 2.176, 2)                 # 43.52
     assert all(by_key[k]["basis"] == "usage" for k in ("electricity", "water", "gas"))
     assert by_key["heat"]["basis"] == "none" and by_key["heat"]["carbon_kg"] == 0
-    assert result["total_kg"] == round(125.19 + 3.32 + 43.52, 2) and result["estimated"] is False
+    assert result["total_kg"] == round(125.19 + 2.37 + 43.52, 2) and result["estimated"] is False
 
 
 def test_spend_based_fallback_is_marked_as_estimate():

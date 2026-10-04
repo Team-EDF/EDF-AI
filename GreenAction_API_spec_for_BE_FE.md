@@ -218,7 +218,7 @@ BE는 부여할 때 이 값을 챌린지에 스냅샷으로 저장해 두고 규
 
 ### `POST /api/household/carbon` (JSON)
 `electricity_kwh/_krw`, `water_m3/_krw`, `gas_m3/_krw`, `heat_gcal/_krw`(모두 선택)로 한 달 탄소를 계산한다.
-사용량이 있으면 `사용량 × 배출계수`(전기 0.4173, 수도 0.332, 가스 2.176, 지역난방 146.9), 없고 금액만 있으면 원당 계수로 추정(`basis: "spend"`).
+사용량이 있으면 `사용량 × 배출계수`(전기 0.4173, 수도 0.237, 가스 2.176, 지역난방 146.9), 없고 금액만 있으면 원당 계수로 추정(`basis: "spend"`).
 응답: `total_kg`, `items[{key,label,usage,unit,krw,carbon_kg,basis}]`, `estimated`, `note`. 근거와 한계는 `GreenAction_household_evidence.md`.
 
 ## 5. 호출 팁
