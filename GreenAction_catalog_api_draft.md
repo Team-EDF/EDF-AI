@@ -157,9 +157,33 @@
 - 난이도·포인트·절감량·인증방식은 카탈로그의 고정값이며 LLM이 바꾸지 않습니다.
 
 ### 2-3. `GET /api/challenges/catalog` – 카탈로그 전체
+**구현 완료** (`app/data/challenge_catalog.json` + `app/services/challenge_catalog.py`). 응답은 챌린지 15개이며 항목 하나는 이렇게 생겼습니다.
 ```json
-{ "catalog_version": "2026-10-03", "challenges": [ { "challenge_id": "MOVE_1", "...": "..." } ] }
+{
+  "catalog_version": "2026-10-04",
+  "challenges": [
+    {
+      "challenge_id": "MOVE_2",
+      "area": "move", "area_label": "이동",
+      "difficulty": 2,
+      "title": "대중교통 주 2회 이용하기",
+      "description": "이번 주 대중교통을 2회 이용해 보세요.",
+      "target_count": 2, "unit": "회", "period": "week",
+      "verification": "AUTO_TRANSIT",
+      "verification_next": null,
+      "daily_check_limit": null,
+      "points": 70,
+      "est_saving_kg": 7.92,
+      "saving_basis": "MOVE_1 값 x 2회"
+    }
+  ]
+}
 ```
+- `verification`은 `AUTO_TRANSIT`(대중교통 GPS 자동 인증) 또는 `SELF`(자율 체크)입니다. 자율 체크는 `daily_check_limit = 1`(챌린지당 하루 1회)이고, 자동 인증은 `null`입니다.
+- `verification_next`는 2차에 붙일 인증방식(식품 저탄소는 `OCR`)이고 지금은 동작하지 않습니다.
+- `est_saving_kg`가 `null`이면 근거 있는 값이 없어 비워 둔 것입니다(이동·쇼핑 6개만 값이 있음).
+- 카탈로그 파일은 불러올 때마다 구조를 검사합니다(필수 항목, 중복 ID, 영역×난이도 15칸, 포인트·난이도 범위, 절감량 근거). 잘못되면 서버가 `500`과 원인을 돌려줍니다.
+
 BE가 챌린지 테이블을 채울 때(seed) 쓰는 원본입니다. 포인트 지급과 완료 판정은 BE 몫이고, AI는 점수를 계산하거나 지급하지 않습니다.
 
 ## 3. 확정이 필요한 항목
