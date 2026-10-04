@@ -15,8 +15,9 @@
 | AI-1.3 실천 성향 유형 | 완료 (일정보다 1일 앞) | 9유형 (경험·관심 3 × 각오 3) |
 | AI-1.4 `POST /api/profile` | 완료 (일정보다 3일 앞) | 로컬 서버(8000)에서 동작 확인 |
 | AI-2.1 카탈로그 JSON + 로더 | 완료 (10/4) | `app/data/challenge_catalog.json`, `GET /api/challenges/catalog`, 테스트 15개 |
+| AI-2.2 챌린지 선택 규칙 | 완료 (10/4) | `app/services/challenge_selector.py`, 테스트 16개 |
 | 개인 저장소 구성 | 완료 (10/4) | `gunmyeol/edf-ai·be·fe` 비공개, 작업 폴더 `C:\edf-work` |
-| 다음 | AI-2.2 선택 규칙, AI-2.3 설명 문구(LLM+폴백), AI-2.4 `/recommend` | 10/4~5 |
+| 다음 | AI-2.3 설명 문구(LLM+폴백), AI-2.4 `/recommend` | 10/4~5 |
 
 ## 0. 전제
 
