@@ -108,9 +108,9 @@ class VisionResult(BaseModel):
 
 # ---------------------------------------------------------------- 이미지 정리
 
-def prepare_images(images: list[bytes]) -> list[bytes]:
+def prepare_images(images: list[bytes], max_side: int = MAX_IMAGE_SIDE) -> list[bytes]:
     """
-    사진을 검사하고 JPEG로 정리한다 (EXIF 방향 반영, 긴 변 MAX_IMAGE_SIDE로 축소).
+    사진을 검사하고 JPEG로 정리한다 (EXIF 방향 반영, 긴 변 max_side로 축소).
     사진이 없거나 너무 많거나 크거나 이미지가 아니면 BadImages.
     """
     from PIL import Image, ImageOps, UnidentifiedImageError
@@ -133,8 +133,8 @@ def prepare_images(images: list[bytes]) -> list[bytes]:
             raise BadImages("이미지 파일이 아니에요.")
         image = ImageOps.exif_transpose(image).convert("RGB")
         longest = max(image.size)
-        if longest > MAX_IMAGE_SIDE:
-            scale = MAX_IMAGE_SIDE / longest
+        if longest > max_side:
+            scale = max_side / longest
             image = image.resize((round(image.width * scale), round(image.height * scale)))
         buffer = io.BytesIO()
         image.save(buffer, format="JPEG", quality=88)

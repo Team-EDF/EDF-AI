@@ -201,6 +201,26 @@ BE는 부여할 때 이 값을 챌린지에 스냅샷으로 저장해 두고 규
 - 인정 마크: 탄소성적표지 중 **저탄소제품** 단계(환경부), 저탄소 농축산물 인증(농림축산식품부), 저탄소 축산물 인증. 탄소배출량만 표시된 1단계 표지와 친환경·유기농 마크는 인정하지 않습니다.
 - 한 번 호출에 보통 1.5~3초, 서버 기동 직후 첫 호출은 준비되지 않았다면 더 걸릴 수 있어 서버 기동 때 미리 준비합니다. BE 타임아웃은 40초를 권합니다.
 
+## 4-3. 가정 에너지(관리비) API
+
+### `POST /api/household/read-bill` (multipart `images` 1~3장)
+관리비/공과금 고지서 사진을 읽는다. 사진은 저장하지 않는다. 읽기 결과는 통과/실패 모두 200이다.
+```json
+{"readable": true, "code": "OK", "message": "고지서에서 값을 읽었어요. 맞는지 확인하고 저장해 주세요.",
+ "bill_month": "2026-09",
+ "values": {"electricity_kwh": 320.0, "electricity_krw": 58120, "water_m3": 14.0, "water_krw": 9800,
+            "gas_m3": 28.0, "gas_krw": 31050, "heat_gcal": null, "heat_krw": null},
+ "total_krw": 182370, "fingerprint": "…", "note": null}
+```
+- 실패 `code`: `NOT_A_BILL`, `UNREADABLE`, `EDITED`, `MONTH_UNKNOWN`, `MONTH_OUT_OF_RANGE`(최근 13개월 밖), `NO_VALUES`
+- 세대 개별 사용료만 읽고 공용요금은 제외한다. 값이 상식 범위를 벗어나면 버리고 `note`로 알린다. 사진 형식 문제 `400`, AI 불가 `503`.
+- `fingerprint`는 (월 + 읽은 값) 해시이며 BE가 같은 고지서의 다른 계정 재사용을 막는 데 쓴다.
+
+### `POST /api/household/carbon` (JSON)
+`electricity_kwh/_krw`, `water_m3/_krw`, `gas_m3/_krw`, `heat_gcal/_krw`(모두 선택)로 한 달 탄소를 계산한다.
+사용량이 있으면 `사용량 × 배출계수`(전기 0.4173, 수도 0.332, 가스 2.176, 지역난방 122.6), 없고 금액만 있으면 원당 계수로 추정(`basis: "spend"`).
+응답: `total_kg`, `items[{key,label,usage,unit,krw,carbon_kg,basis}]`, `estimated`, `note`. 근거와 한계는 `GreenAction_household_evidence.md`.
+
 ## 5. 호출 팁
 
 - **응답 시간(로컬 측정):** `/profile`은 DB만 쓰는 계산이라 설문 기준 약 0.2초, `user_id`로 영수증을 같이 조회하면 약 0.4초입니다. `/recommend`는 AI 문구 생성이 들어가서 보통 1~3초입니다. BE 타임아웃은 **10초** 정도를 권합니다.

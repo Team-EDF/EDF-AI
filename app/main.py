@@ -12,6 +12,7 @@ from app.db_seed import seed_reference_data
 from app.api.routes import (
     challenges,
     feedback,
+    household,
     merchant,
     ocr,
     onboarding,
@@ -115,6 +116,14 @@ app.include_router(
     challenges.router,
     prefix="/api",
     tags=["challenges"],
+)
+
+
+# 가정 에너지(관리비): 고지서 사진 판독 + 월간 탄소 계산
+app.include_router(
+    household.router,
+    prefix="/api",
+    tags=["household"],
 )
 
 
