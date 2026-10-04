@@ -26,6 +26,11 @@ DIFFICULTIES = (1, 2, 3)
 VERIFICATIONS = ("AUTO_TRANSIT", "SELF")
 PERIODS = ("week",)
 
+# 사진 인증 종류: TUMBLER(텀블러 + 카페 영수증), LOW_CARBON(저탄소 인증 마크 + 영수증)
+PHOTO_VERIFICATIONS = ("TUMBLER", "LOW_CARBON")
+# 서버 교차 검증: NO_SHOPPING_RECEIPT(그날 쇼핑 영수증이 등록돼 있으면 "무구매"로 인정하지 않음)
+CROSS_CHECKS = ("NO_SHOPPING_RECEIPT",)
+
 # 자율 체크 챌린지는 하루에 한 번만 체크할 수 있다 (어뷰징 방지).
 SELF_DAILY_CHECK_LIMIT = 1
 
@@ -65,6 +70,14 @@ def _validate(raw: dict) -> None:
             raise ValueError(f"{cid}: 알 수 없는 인증방식 {item['verification']!r}")
         if item["period"] not in PERIODS:
             raise ValueError(f"{cid}: 알 수 없는 period {item['period']!r}")
+        photo = item.get("photo_verification")
+        if photo is not None and photo not in PHOTO_VERIFICATIONS:
+            raise ValueError(f"{cid}: 알 수 없는 사진 인증 {photo!r}")
+        if photo is not None and item["verification"] != "SELF":
+            raise ValueError(f"{cid}: 사진 인증은 자율 체크(SELF) 챌린지에만 붙일 수 있습니다.")
+        cross = item.get("cross_check")
+        if cross is not None and cross not in CROSS_CHECKS:
+            raise ValueError(f"{cid}: 알 수 없는 교차 검증 {cross!r}")
         if not isinstance(item["points"], int) or item["points"] <= 0:
             raise ValueError(f"{cid}: points는 1 이상의 정수여야 합니다 ({item['points']!r})")
         if not isinstance(item["target_count"], int) or item["target_count"] <= 0:
@@ -85,12 +98,26 @@ def _validate(raw: dict) -> None:
 
 
 def _normalize(item: dict) -> dict:
-    """응답/선택에 쓰는 형태로 보강한다 (영역 이름, 일일 체크 제한)."""
+    """응답/선택에 쓰는 형태로 보강한다 (영역 이름, 일일 체크 제한, 인증 방식 목록, 자율 체크 한도)."""
     normalized = dict(item)
     normalized["area_label"] = AREA_LABELS[item["area"]]
     # 자동 인증은 일일 제한이 없고, 자율 체크는 챌린지당 하루 1회
     normalized["daily_check_limit"] = SELF_DAILY_CHECK_LIMIT if item["verification"] == "SELF" else None
     normalized.setdefault("verification_next", None)
+    photo = item.get("photo_verification")
+    normalized["photo_verification"] = photo
+    normalized["cross_check"] = item.get("cross_check")
+    # 화면에 보여 줄 인증 방식 목록: 사진 인증이 있으면 "자율 체크 + 인증하기" 두 가지
+    normalized["verification_methods"] = ["SELF", "PHOTO"] if photo else [item["verification"]]
+    # 사진 인증이 있는 챌린지는 자율 체크를 일부만 인정하고 나머지는 인증으로 채운다.
+    # - 텀블러: 텀블러 할인이 흔해서 인증이 쉽다 -> 목표의 절반(내림)까지만 자율 체크 (1회짜리는 인증 필수)
+    # - 저탄소 마크: 마크가 붙은 상품이 많지 않아 인증이 어려울 수 있다 -> 목표의 절반(올림)까지 자율 체크
+    if photo == "TUMBLER":
+        normalized["self_check_limit"] = item["target_count"] // 2
+    elif photo == "LOW_CARBON":
+        normalized["self_check_limit"] = (item["target_count"] + 1) // 2
+    else:
+        normalized["self_check_limit"] = None
     return normalized
 
 

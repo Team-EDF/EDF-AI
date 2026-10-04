@@ -21,6 +21,7 @@ from app.api.routes import (
 from app.services.rag_index_service import build_rag_index
 from app.services.classifier import MerchantClassifier
 from app.services.challenge_explainer import warm_up as warm_up_llm
+from app.services.challenge_verifier import warm_up as warm_up_verifier
 
 # ChatHistory는 앱 어디서도 import되지 않으면 Base.metadata에
 # 등록되지 않으므로 create_all() 실행 전에 import해야 한다.
@@ -185,6 +186,8 @@ def warm_up_challenge_llm():
      별도 스레드라 서버 기동을 늦추지 않고, 실패해도 기동에는 영향이 없다.)
     """
     threading.Thread(target=warm_up_llm, daemon=True).start()
+    # 사진 인증용 Gemini 비전 클라이언트도 미리 준비한다 (첫 호출이 약 18초 걸렸다)
+    threading.Thread(target=warm_up_verifier, daemon=True).start()
 
 
 # ============================================================

@@ -163,6 +163,42 @@ BE가 챌린지 테이블을 채울 때(seed) 쓰는 원본입니다. 5영역(�
 
 포인트와 인증방식은 AI 쪽 제안값이라 **기획 확정 후 JSON 한 파일(`app/data/challenge_catalog.json`)만 고치면 됩니다.** 카탈로그는 서버가 읽을 때마다 구조를 검사해서, 값이 어긋나면 `500`과 원인을 돌려줍니다.
 
+## 4-1. 챌린지의 인증 방식 필드 (recommend / catalog 응답에 추가됨)
+
+| 필드 | 설명 |
+|---|---|
+| `verification_methods` | 화면에 보여 줄 인증 방식. `["AUTO_TRANSIT"]`(대중교통 GPS 자동), `["SELF"]`(직접 체크), `["SELF","PHOTO"]`(직접 체크 + 사진 인증) |
+| `photo_verification` | 사진 인증 종류 `"TUMBLER"`(텀블러+카페 영수증) / `"LOW_CARBON"`(저탄소 인증 마크+영수증) / `null` |
+| `self_check_limit` | 사진 인증이 있는 챌린지의 **직접 체크 주간 인정 횟수**. 텀블러는 목표의 절반(내림, 1회짜리는 0 = 인증 필수), 저탄소 마크는 절반(올림). 사진 인증이 없으면 `null`(제한 없음) |
+| `cross_check` | 서버 교차 검증. `"NO_SHOPPING_RECEIPT"`(무구매 챌린지: 그날 쇼핑 영수증이 등록돼 있으면 인정하지 않음) / `null` |
+
+BE는 부여할 때 이 값을 챌린지에 스냅샷으로 저장해 두고 규칙을 적용합니다 (자세한 동작은 BE 저장소 `GREEN_ACTION.md`).
+
+## 4-2. `POST /api/challenges/verify` — 사진 인증 판정 (multipart)
+
+사진(텀블러/인증 마크 상품 + 영수증)을 읽어 인증 여부를 정합니다. **사진은 저장하지 않습니다.**
+
+**요청** (`multipart/form-data`): `kind` = `TUMBLER` | `LOW_CARBON`, `images` = 사진 1~3장(장당 8MB 이하, 영수증과 상품을 한 장에 같이 찍어도 됨)
+
+**응답** (통과/거절 모두 200)
+```json
+{
+  "passed": true,
+  "code": "OK",
+  "message": "인증 완료! 영수증의 개인컵 할인 문구로 확인됐어요.",
+  "kind": "TUMBLER",
+  "receipt": {"merchant_name": "스타벅스 강남점", "payment_date": "2026-10-04", "payment_time": "13:41", "total_amount": 4100, "fingerprint": "e29c8ae71e..."},
+  "evidence": "RECEIPT_DISCOUNT",
+  "marks": []
+}
+```
+- `code`: `OK`, `RECEIPT_UNREADABLE`(영수증의 가맹점·날짜·금액을 못 읽음), `RECEIPT_DATE`, `RECEIPT_TOO_OLD`(오늘·어제 영수증만 인정), `RECEIPT_EDITED`(편집 흔적), `NOT_CAFE`, `NO_TUMBLER`, `NO_MARK`
+- `evidence`(통과 근거): `PHOTO_AND_RECEIPT`(텀블러 사진 + 영수증 개인컵 할인), `PHOTO`(텀블러 사진 + 카페 영수증), `RECEIPT_DISCOUNT`(영수증의 개인컵/에코별 문구), `MARK_AND_RECEIPT`(인정 마크 + 영수증)
+- `receipt.fingerprint`: 날짜·시각·금액의 해시. **BE가 DB 유니크로 중복 사용을 막습니다** (같은 영수증을 다시 찍어도 같은 값이 나옴, 저화질 재촬영으로 확인).
+- 오류: 사진 형식 문제 `400`(`detail`에 문구), AI 일시 불가 `503`. `CHALLENGE_VERIFY_ENABLED=false`로 기능을 끌 수 있습니다.
+- 인정 마크: 탄소성적표지 중 **저탄소제품** 단계(환경부), 저탄소 농축산물 인증(농림축산식품부), 저탄소 축산물 인증. 탄소배출량만 표시된 1단계 표지와 친환경·유기농 마크는 인정하지 않습니다.
+- 한 번 호출에 보통 1.5~3초, 서버 기동 직후 첫 호출은 준비되지 않았다면 더 걸릴 수 있어 서버 기동 때 미리 준비합니다. BE 타임아웃은 40초를 권합니다.
+
 ## 5. 호출 팁
 
 - **응답 시간(로컬 측정):** `/profile`은 DB만 쓰는 계산이라 설문 기준 약 0.2초, `user_id`로 영수증을 같이 조회하면 약 0.4초입니다. `/recommend`는 AI 문구 생성이 들어가서 보통 1~3초입니다. BE 타임아웃은 **10초** 정도를 권합니다.
