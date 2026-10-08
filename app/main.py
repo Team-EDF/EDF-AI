@@ -1,3 +1,5 @@
+import threading
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -8,13 +10,19 @@ from app.db_migrations import run_db_migrations
 from app.db_seed import seed_reference_data
 
 from app.api.routes import (
+    challenges,
     feedback,
+    household,
     merchant,
     ocr,
+    onboarding,
+    profile,
 )
 
 from app.services.rag_index_service import build_rag_index
 from app.services.classifier import MerchantClassifier
+from app.services.challenge_explainer import warm_up as warm_up_llm
+from app.services.challenge_verifier import warm_up as warm_up_verifier
 
 # ChatHistory는 앱 어디서도 import되지 않으면 Base.metadata에
 # 등록되지 않으므로 create_all() 실행 전에 import해야 한다.
@@ -87,6 +95,38 @@ app.include_router(
 )
 
 
+# 온보딩 설문 -> 추천 목표 계산 (데모/내부 테스트 전용, 공식 계약 아님)
+app.include_router(
+    onboarding.router,
+    prefix="/api",
+    tags=["onboarding-demo"],
+)
+
+
+# Green Profile (설문 -> 영역별 레벨 + 실천 성향 + 추천 목표)
+app.include_router(
+    profile.router,
+    prefix="/api",
+    tags=["profile"],
+)
+
+
+# 챌린지 카탈로그 (5영역 x 3난이도 = 15개, BE가 챌린지 테이블 seed에 사용)
+app.include_router(
+    challenges.router,
+    prefix="/api",
+    tags=["challenges"],
+)
+
+
+# 가정 에너지(관리비): 고지서 사진 판독 + 월간 탄소 계산
+app.include_router(
+    household.router,
+    prefix="/api",
+    tags=["household"],
+)
+
+
 # 소비기록 기반 RAG + Gemini 피드백 채팅
 #
 # feedback.py 내부 route:
@@ -145,6 +185,18 @@ def warm_up_models():
     """
     model = MerchantClassifier._get_model()
     seed_reference_data(model)
+
+
+@app.on_event("startup")
+def warm_up_challenge_llm():
+    """
+    챌린지 추천 설명 문구용 Gemini 클라이언트를 백그라운드에서 미리 준비한다.
+    (준비에 약 9초 걸려서, 미리 해 두지 않으면 첫 추천 요청이 느리다.
+     별도 스레드라 서버 기동을 늦추지 않고, 실패해도 기동에는 영향이 없다.)
+    """
+    threading.Thread(target=warm_up_llm, daemon=True).start()
+    # 사진 인증용 Gemini 비전 클라이언트도 미리 준비한다 (첫 호출이 약 18초 걸렸다)
+    threading.Thread(target=warm_up_verifier, daemon=True).start()
 
 
 # ============================================================

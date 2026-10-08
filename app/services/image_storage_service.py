@@ -25,33 +25,25 @@ def _build_object_key(filename: str) -> str:
     return f"{S3_UPLOAD_PREFIX}/{uuid.uuid4()}{ext}"
 
 
-def _save_to_s3(image_bytes: bytes, filename: str) -> str | None:
-    """S3에 이미지 업로드, 성공 시 접근 가능한 URL 반환. 실패 시 None."""
+def _save_to_s3(image_bytes: bytes, filename: str) -> str:
+    """S3에 이미지 업로드, 성공 시 URL 반환. 실패 시 예외를 그대로 발생시킨다."""
     import boto3
-    from botocore.exceptions import ClientError
+
+    if not S3_BUCKET_NAME:
+        raise RuntimeError("S3_BUCKET_NAME 환경변수가 설정되지 않았습니다.")
 
     key = _build_object_key(filename)
-    try:
-        client = boto3.client("s3", region_name=AWS_REGION)
-        client.put_object(Bucket=S3_BUCKET_NAME, Key=key, Body=image_bytes)
-        return f"https://{S3_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{key}"
-    except ClientError:
-        logger.exception("S3 이미지 업로드 실패: key=%s", key)
-        return None
+    client = boto3.client("s3", region_name=AWS_REGION)
+    client.put_object(Bucket=S3_BUCKET_NAME, Key=key, Body=image_bytes)
+    return f"https://{S3_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{key}"
 
 
-def _save_to_local_disk(image_bytes: bytes, filename: str) -> str | None:
-    """로컬 디스크에 이미지 저장, 성공 시 상대 경로 반환. 실패 시 None."""
+def _save_to_local_disk(image_bytes: bytes, filename: str) -> str:
     ext = Path(filename).suffix or ".jpg"
-    saved_name = f"{uuid.uuid4()}{ext}"
-    try:
-        LOCAL_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-        target = LOCAL_UPLOAD_DIR / saved_name
-        target.write_bytes(image_bytes)
-        return str(target)
-    except OSError:
-        logger.exception("로컬 이미지 저장 실패: filename=%s", filename)
-        return None
+    LOCAL_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    target = LOCAL_UPLOAD_DIR / f"{uuid.uuid4()}{ext}"
+    target.write_bytes(image_bytes)
+    return str(target)
 
 
 # ── 방법 A: 로컬 개발 환경에서도 항상 실제 S3에 업로드 ──────────────────────
@@ -63,7 +55,16 @@ def _save_to_local_disk(image_bytes: bytes, filename: str) -> str | None:
 
 
 # ── 방법 B: 배포 환경은 S3, 로컬 개발 환경은 디스크 (현재 활성화된 방식) ────
-def save_receipt_image(image_bytes: bytes, filename: str) -> str | None:
+def save_receipt_image(image_bytes: bytes, filename: str) -> str:
     if APP_ENV in ("prod", "production"):
         return _save_to_s3(image_bytes, filename)
     return _save_to_local_disk(image_bytes, filename)
+
+def describe_storage_error(error: Exception) -> str:
+    """실패 원인을 응답에 넣을 짧은 문자열로 변환 (ARN 등 상세는 로그에만 남김)."""
+    response = getattr(error, "response", None)  # botocore ClientError
+    if isinstance(response, dict):
+        code = response.get("Error", {}).get("Code")
+        if code:
+            return f"{type(error).__name__}: {code}"
+    return f"{type(error).__name__}: {str(error)[:150]}"
