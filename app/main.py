@@ -10,6 +10,8 @@ from app.api.routes import (
     feedback,
     merchant,
     ocr,
+    utility_bill,
+    utility_bill_gemini_test_route,
 )
 
 from app.services.rag_index_service import build_rag_index
@@ -60,9 +62,20 @@ app.add_middleware(
 # API Router 등록
 # ============================================================
 
-# 외부 공식 API :
-# POST /api/ocr/classify(사진 업로드)
-# POST /feedback/chat(채팅)
+# 외부 공식 API:
+#
+# POST /api/ocr/classify
+#   → 영수증 OCR + 분류 + 탄소 계산
+#
+# POST /api/utility-bill/analyze
+#   → 관리비 고지서 OCR + 파싱 + 탄소 계산
+#
+# POST /feedback/chat
+#   → 소비기록 기반 AI 피드백 채팅
+#
+# 비교 테스트 API:
+# POST /api/utility-bill/gemini-test
+#   → Gemini Vision으로 관리비 고지서 이미지 분석
 #
 # merchant.router / ocr.router 안의 나머지 엔드포인트
 # (/api/classify, /api/ocr/clova/classify 등)는
@@ -70,7 +83,10 @@ app.add_middleware(
 # 백엔드/프론트가 호출할 공식 계약 대상이 아님.
 
 
+# ------------------------------------------------------------
 # 가맹점 / 품목 분류 API
+# ------------------------------------------------------------
+
 app.include_router(
     merchant.router,
     prefix="/api",
@@ -78,7 +94,10 @@ app.include_router(
 )
 
 
+# ------------------------------------------------------------
 # 영수증 OCR + 분류 + 탄소 계산 + DB 저장
+# ------------------------------------------------------------
+
 app.include_router(
     ocr.router,
     prefix="/api",
@@ -86,12 +105,48 @@ app.include_router(
 )
 
 
+# ------------------------------------------------------------
+# 관리비 고지서 OCR + 파싱 + 탄소 계산
+#
+# utility_bill.router 내부 prefix:
+#   /utility-bill
+#
+# 최종 API:
+#   POST /api/utility-bill/analyze
+# ------------------------------------------------------------
+
+app.include_router(
+    utility_bill.router,
+    prefix="/api",
+)
+
+
+# ------------------------------------------------------------
+# Gemini Vision 관리비 고지서 비교 테스트
+#
+# utility_bill_gemini_test_route.router 내부 prefix:
+#   /api/utility-bill
+#
+# 최종 API:
+#   POST /api/utility-bill/gemini-test
+#
+# 기존 관리비 분석 API와 독립적으로 실행한다.
+# ------------------------------------------------------------
+
+app.include_router(
+    utility_bill_gemini_test_route.router,
+)
+
+
+# ------------------------------------------------------------
 # 소비기록 기반 RAG + Gemini 피드백 채팅
 #
 # feedback.py 내부 route:
 #   /feedback/chat
 #
 # 따라서 여기서는 prefix를 추가하지 않는다.
+# ------------------------------------------------------------
+
 app.include_router(
     feedback.router,
     tags=["feedback"],
