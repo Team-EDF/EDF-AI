@@ -69,9 +69,22 @@ app.add_middleware(
 # API Router 등록
 # ============================================================
 
-# 외부 공식 API :
-# POST /api/ocr/classify(사진 업로드)
-# POST /feedback/chat(채팅)
+# 외부 공식 API:
+#
+# POST /api/ocr/classify
+#   → 영수증 OCR + 분류 + 탄소 계산
+#
+# POST /api/household/read-bill
+#   → 관리비 고지서 이미지 판독 (인증용, 최근 13개월 제한)
+#
+# POST /api/household/carbon
+#   → 가정 에너지 사용량/금액 기반 탄소 계산
+#
+# POST /api/household/analyze
+#   → 관리비 고지서 Gemini 판독 + 탄소 계산 (과거 고지서 허용)
+#
+# POST /feedback/chat
+#   → 소비기록 기반 AI 피드백 채팅
 #
 # merchant.router / ocr.router 안의 나머지 엔드포인트
 # (/api/classify, /api/ocr/clova/classify 등)는
@@ -79,7 +92,10 @@ app.add_middleware(
 # 백엔드/프론트가 호출할 공식 계약 대상이 아님.
 
 
+# ------------------------------------------------------------
 # 가맹점 / 품목 분류 API
+# ------------------------------------------------------------
+
 app.include_router(
     merchant.router,
     prefix="/api",
@@ -87,7 +103,10 @@ app.include_router(
 )
 
 
+# ------------------------------------------------------------
 # 영수증 OCR + 분류 + 탄소 계산 + DB 저장
+# ------------------------------------------------------------
+
 app.include_router(
     ocr.router,
     prefix="/api",
@@ -95,7 +114,10 @@ app.include_router(
 )
 
 
+# ------------------------------------------------------------
 # 온보딩 설문 -> 추천 목표 계산 (데모/내부 테스트 전용, 공식 계약 아님)
+# ------------------------------------------------------------
+
 app.include_router(
     onboarding.router,
     prefix="/api",
@@ -119,7 +141,7 @@ app.include_router(
 )
 
 
-# 가정 에너지(관리비): 고지서 사진 판독 + 월간 탄소 계산
+# 가정 에너지(관리비): Gemini 고지서 판독 + 월간 탄소 계산
 app.include_router(
     household.router,
     prefix="/api",
@@ -128,10 +150,7 @@ app.include_router(
 
 
 # 소비기록 기반 RAG + Gemini 피드백 채팅
-#
-# feedback.py 내부 route:
-#   /feedback/chat
-#
+# feedback.py 내부 route: /feedback/chat
 # 따라서 여기서는 prefix를 추가하지 않는다.
 app.include_router(
     feedback.router,
@@ -158,12 +177,8 @@ app.mount(
 
 @app.get("/")
 def serve_ui():
-    """
-    개발용 웹 UI 반환.
-    """
-    return FileResponse(
-        "static/index.html"
-    )
+    """개발용 웹 UI 반환."""
+    return FileResponse("static/index.html")
 
 
 # ============================================================
@@ -205,12 +220,8 @@ def warm_up_challenge_llm():
 
 @app.get("/health")
 def health_check():
-    """
-    서버 동작 여부 확인.
-    """
-    return {
-        "status": "ok"
-    }
+    """서버 동작 여부 확인."""
+    return {"status": "ok"}
 
 
 # ============================================================

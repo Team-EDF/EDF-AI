@@ -95,7 +95,8 @@ def test_heat_spend_factor_comes_from_kdhc_tariff_not_gas():
 
 def test_heat_units_convert_to_gcal():
     assert heat_to_gcal(823.6, "Mcal") == 0.8236
-    assert heat_to_gcal(0.8236, "Gcal") == 0.8236 and heat_to_gcal(0.8236, None) == 0.8236
+    assert heat_to_gcal(0.8236, "Gcal") == 0.8236
+    assert heat_to_gcal(0.8236, None) is None
     assert abs(heat_to_gcal(3.4482, "GJ") - 0.8236) < 1e-3                 # 1 Gcal = 4.1868 GJ
     assert abs(heat_to_gcal(3448.2, "MJ") - 0.8236) < 1e-3
     assert abs(heat_to_gcal(957.9, "kWh") - 0.8236) < 1e-3                 # 1 Gcal = 1,163 kWh

@@ -1,30 +1,15 @@
-"""
-가정 에너지(관리비) 월간 탄소 계산: 전기, 수도, 도시가스, 지역난방.
+"""가정 에너지(관리비) 월간 탄소 계산: 전기, 수도, 도시가스, 지역난방.
 
-우선순위
-1) 사용량이 있으면 "사용량 x 배출계수" (정확)
-2) 사용량이 없고 금액만 있으면 "금액 x 원당 탄소계수" (추정). 원당 계수는 DB의 가정에너지 중분류
-   (전기비/수도비/도시가스비)에 이미 들어 있는 값을 쓰고, DB를 못 읽으면 같은 값의 상수를 쓴다.
-
-배출계수 출처와 한계 (2026-10 조사, 근거는 GreenAction_household_evidence.md)
-- 전기 0.4173 kgCO2eq/kWh: 기후에너지환경부가 확정한 2023년 전력배출계수(0.4173 tCO2eq/MWh). 정부는 갱신 주기를
-  3년에서 1년으로 줄였으므로 매년 바뀐다. (탄소포인트제 지자체 안내는 0.424, 탄소발자국 계산기는 0.4781)
-- 도시가스 2.176 kgCO2eq/m3: 한국환경공단 탄소발자국 계산기(kcen.kr) 계수. 비교: 탄소포인트제 지자체 안내 2.240,
-  EG-TIPS 값으로 직접 계산 15.236 tC/TJ x 44/12 x 순발열량 38.5MJ/Nm3 = 2.15 -> 자료마다 2.15~2.24 (약 +-3%)
-- 수도 0.237 kgCO2eq/m3: 한국환경공단 탄소발자국 계산기 계수. (탄소포인트제 지자체 안내는 0.332) 교차검증: 광역상수도
-  전력원단위 2025년 0.3831 kWh/m3(취수·정수·가압 전력만) x 전력배출계수 0.4173 = 0.160 이라 0.237 이 과대하지 않다.
-  0.160 은 지방 배수·가압과 하수 처리 에너지가 빠진 하한에 가까운 값이다.
-- 지역난방 146.9 kgCO2eq/Gcal: 한국지역난방공사가 "지역난방용 열 사용 온실가스 산정"용으로 공개한 열 생산량 기준 배출계수
-  (수도권 연계지사 2024년 4기: CO2 35,058 kg/TJ, CH4 0.634 kg/TJ, N2O 0.064 kg/TJ). GWP 28/265 를 적용해 합산하고
-  1 Gcal = 0.0041868 TJ 로 환산: (35058 + 0.634x28 + 0.064x265) x 0.0041868 = 146.9. 지사마다 달라서(청주 약 237,
-  대구 약 202, 세종 약 179) 수도권 값을 기본으로 쓴다. 앱은 지역을 모르므로 지방 거주자는 오차가 있다.
-  (이전 값 122.6 은 출처가 불분명한 고정값이라 교체함)
+사용량이 있으면 사용량 기반, 사용량이 없고 금액이 있으면 금액 기반 추정.
+난방 원본 사용량/단위를 보존하며 m3·톤은 근거 없이 열량으로 변환하지 않는다.
+배출계수 및 근거: 프로젝트 GreenAction_household_evidence.md (주기적 재검증 필요).
 """
+
 import logging
+import math
 
 logger = logging.getLogger(__name__)
 
-# 사용량 기준 배출계수 (kgCO2eq / 단위)
 FACTORS = {
     "electricity": {"label": "전기", "unit": "kWh", "factor": 0.4173, "source": "2023 전력배출계수"},
     "water": {"label": "수도", "unit": "m3", "factor": 0.237, "source": "한국환경공단 탄소발자국 계산기 계수"},
@@ -33,95 +18,131 @@ FACTORS = {
 }
 UTILITY_KEYS = tuple(FACTORS)
 
-# 지역난방은 DB 중분류에 없어서 열요금 단가로 원당 계수를 만든다.
-# 한국지역난방공사 주택용 사용요금 단일요금 112.32원/Mcal (2024.7.1 적용, 이후 동결 보도). 1 Gcal = 1,000 Mcal.
-# 원당 계수 = (kgCO2eq/Gcal) / (원/Gcal) = 146.9 / 112,320 = 0.001308 kgCO2eq/원
-# 한계: 난방비에는 기본요금(계약면적 ㎡당 52.40원)도 포함돼 있어 사용량이 적은 달은 열량이 과대 추정된다.
-#       민간 지역난방 사업자는 단가가 다르다.
+# 금액 기반 난방 추정: 기본요금·지역·사업자·요금제에 따라 오차가 클 수 있음.
 HEAT_TARIFF_KRW_PER_MCAL = 112.32
 HEAT_SPEND_FACTOR = FACTORS["heat"]["factor"] / (HEAT_TARIFF_KRW_PER_MCAL * 1000)
 
-# 금액만 있을 때 쓰는 원당 계수 (kgCO2eq / 원). 전기·수도·가스는 DB 가정에너지 중분류 값과 같다 (DB를 못 읽을 때의 대체값).
 SPEND_FACTOR_FALLBACK = {
-    "electricity": 0.0025380370,   # 전기비
-    "water": 0.0001928440,         # 수도비
-    "gas": 0.0026474220,           # 도시가스비
-    "heat": HEAT_SPEND_FACTOR,     # 지역난방: 열요금 단가 기준 (위 설명)
+    "electricity": 0.0025380370,
+    "water": 0.0001928440,
+    "gas": 0.0026474220,
+    "heat": HEAT_SPEND_FACTOR,
 }
 
-# 고지서에 찍히는 열량 단위 -> Gcal 환산 (1 Gcal = 1,000 Mcal = 4.1868 GJ = 1,163 kWh). 유량(m3, 톤)은 열량이 아니라 환산 불가.
+# 1 Gcal = 1000 Mcal = 1,000,000 kcal = 4.1868 GJ = 4186.8 MJ
+# 1 Gcal ≈ 1163 kWh ≈ 1.163 MWh (반올림된 변환 계수).
 HEAT_UNIT_TO_GCAL = {
-    "gcal": 1.0, "mcal": 0.001, "kcal": 0.000001,
-    "gj": 1 / 4.1868, "mj": 1 / 4186.8,
-    "mwh": 1 / 1.163, "kwh": 1 / 1163,
+    "gcal": 1.0,
+    "mcal": 0.001,
+    "kcal": 0.000001,
+    "gj": 1 / 4.1868,
+    "mj": 1 / 4186.8,   
+    "mwh": 3.6 / 4.1868,
+    "kwh": 3.6 / 4186.8,
 }
 
-
-def heat_to_gcal(usage, unit: str | None) -> float | None:
-    """지역난방 사용열량을 Gcal 로 환산한다. 단위가 없으면 Gcal 로 본다. 열량이 아닌 단위(m3, 톤)는 None."""
-    number = _number(usage)
-    if number is None:
-        return None
-    key = (unit or "gcal").strip().lower().replace(" ", "").replace("㎉", "kcal")
-    ratio = HEAT_UNIT_TO_GCAL.get(key)
-    return None if ratio is None else number * ratio
 _SPEND_DB_NAMES = {"electricity": "전기비", "water": "수도비", "gas": "도시가스비"}
-
 _spend_cache: dict | None = None
 
 
+def _number(value) -> float | None:
+    """0 이상의 유한 숫자만 허용한다. 0은 유효한 측정값이다."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return number if math.isfinite(number) and number >= 0 else None
+
+
+def normalize_heat_unit(unit: str | None) -> str | None:
+    """단위 표기를 표준화하되, 모르는 단위는 원본 문자열로 남긴다."""
+    if not isinstance(unit, str) or not unit.strip():
+        return None
+    normalized = (
+        unit.strip()
+        .replace(" ", "")
+        .replace("㎥", "m3")
+        .replace("³", "3")
+        .replace("㎉", "kcal")
+    )
+    aliases = {
+        "m3": "m3", "ton": "ton", "t": "ton", "톤": "ton",
+        "gcal": "Gcal", "mcal": "Mcal", "kcal": "kcal",
+        "gj": "GJ", "mj": "MJ", "kwh": "kWh", "mwh": "MWh",
+    }
+    return aliases.get(normalized.lower(), normalized)
+
+
+def heat_to_gcal(usage, unit: str | None) -> float | None:
+    """열에너지 단위만 Gcal로 변환. m3·톤·미확인 단위는 None."""
+    number = _number(usage)
+    normalized = normalize_heat_unit(unit)
+    if number is None or normalized is None:
+        return None
+    ratio = HEAT_UNIT_TO_GCAL.get(normalized.lower())
+    return None if ratio is None else number * ratio
+
+
 def get_spend_factors() -> dict:
-    """원당 탄소계수를 DB(가정에너지 중분류)에서 읽어 캐시한다. 못 읽으면 상수."""
+    """DB의 가정에너지 원당 배출계수를 우선 조회, 실패 시 기본값 사용."""
     global _spend_cache
     if _spend_cache is not None:
-        return _spend_cache
+        return dict(_spend_cache)
+
     factors = dict(SPEND_FACTOR_FALLBACK)
     try:
         from app.database.connection import get_db_connection
 
         conn = get_db_connection()
         try:
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                SELECT mc.middle_name, mc.co2eq_krw
-                FROM middle_category mc
-                JOIN main_category m ON m.main_category_id = mc.main_category_id
-                WHERE m.main_name = '가정에너지'
-                """
-            )
-            rows = {name: float(value) for name, value in cursor.fetchall() if value is not None}
-            cursor.close()
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT mc.middle_name, mc.co2eq_krw
+                    FROM middle_category mc
+                    JOIN main_category m ON m.main_category_id = mc.main_category_id
+                    WHERE m.main_name = '가정에너지'
+                    """
+                )
+                rows = {name: _number(value) for name, value in cursor.fetchall()}
         finally:
             conn.close()
+
         for key, db_name in _SPEND_DB_NAMES.items():
-            if db_name in rows:
-                factors[key] = rows[db_name]
-    except Exception as e:  # noqa: BLE001
-        logger.warning("원당 탄소계수를 DB에서 읽지 못해 상수를 씁니다: %s: %s", type(e).__name__, str(e)[:100])
+            value = rows.get(db_name)
+            if value is not None and value > 0:
+                factors[key] = value
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "원당 탄소계수를 DB에서 읽지 못해 기본값을 씁니다: %s: %s",
+            type(exc).__name__, str(exc)[:100],
+        )
+
     _spend_cache = factors
-    return factors
+    return dict(factors)
 
 
-def _number(value) -> float | None:
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return None
-    return number if number >= 0 else None
+def clear_spend_factors_cache() -> None:
+    global _spend_cache
+    _spend_cache = None
 
 
 def calculate_household_carbon(bill: dict, spend_factors: dict | None = None) -> dict:
-    """
-    한 달 관리비의 탄소를 계산한다.
+    """4개 항목의 월간 탄소배출량 계산.
 
-    bill 예: {"electricity_kwh": 300, "electricity_krw": 52000, "water_m3": 12, "water_krw": 9000,
-              "gas_m3": 25, "gas_krw": 30000, "heat_gcal": None, "heat_krw": None}
-    반환: {"total_kg", "items": [{key, label, usage, unit, krw, carbon_kg, basis}], "estimated": bool, "note"}
-      basis = "usage"(사용량 기준) | "spend"(금액으로 추정) | "none"(값 없음)
+    heat_gcal이 있으면 사용하고, 없으면 heat_usage + heat_unit에서 열량을 환산한다.
+    m3·톤 등의 난방 원본 사용량은 탄소 계산용 열량으로 취급하지 않는다.
+    응답 items 스키마는 기존과 동일하게 유지한다.
     """
-    spend = spend_factors or get_spend_factors()
-    usage_field = {"electricity": "electricity_kwh", "water": "water_m3", "gas": "gas_m3", "heat": "heat_gcal"}
+    spend = get_spend_factors() if spend_factors is None else spend_factors
+    usage_field = {
+        "electricity": "electricity_kwh",
+        "water": "water_m3",
+        "gas": "gas_m3",
+        "heat": "heat_gcal",
+    }
     items = []
     total = 0.0
     estimated = False
@@ -130,13 +151,26 @@ def calculate_household_carbon(bill: dict, spend_factors: dict | None = None) ->
         info = FACTORS[key]
         usage = _number(bill.get(usage_field[key]))
         krw = _number(bill.get(f"{key}_krw"))
+
+        if key == "heat":
+            raw_usage = _number(bill.get("heat_usage"))
+            raw_unit = normalize_heat_unit(bill.get("heat_unit"))
+            if raw_usage is not None and raw_unit is not None:
+                # 원본이 존재하면 그 값이 우선이다. 열량 단위가 아니면
+                # 이전 단계의 잘못된 heat_gcal 값도 신뢰하지 않는다.
+                usage = heat_to_gcal(raw_usage, raw_unit)
+
         if usage is not None and usage > 0:
             carbon, basis = usage * info["factor"], "usage"
         elif krw is not None and krw > 0:
-            carbon, basis = krw * spend[key], "spend"
+            spend_factor = _number(spend.get(key))
+            if spend_factor is None:
+                spend_factor = SPEND_FACTOR_FALLBACK[key]
+            carbon, basis = krw * spend_factor, "spend"
             estimated = True
         else:
             carbon, basis = 0.0, "none"
+
         total += carbon
         items.append({
             "key": key,

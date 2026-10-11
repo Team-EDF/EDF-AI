@@ -24,3 +24,4 @@ openai
 boto3>=1.34.0
 python-multipart>=0.0.20
 Pillow
+rapidfuzz==3.14.6

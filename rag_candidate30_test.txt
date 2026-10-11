@@ -1,0 +1,402 @@
+[RAG] preferred_category=food
+
+[RAG HYBRID RERANK] ================================
+
+[RAG HYBRID RERANK] 1
+score=0.8869
+cross_encoder_raw=4.6076
+cross_encoder_norm=0.9901
+rrf_norm=0.5423
+rrf_rank=18
+retrieval_appearances=1
+behavior_adjustment=+0.0450
+intent_norm=0.7368
+behavior_reasons=['meat_alternative+0.045(1)']
+evidence_score=1.0000
+evidence_reasons=['query_overlap=0.800', 'effect_carbon_reduction+0.18', 'quantitative_presence+0.12(8)', 'topic_effect_near+0.18', 'effect_carbon_near+0.14', 'direct_quantitative_evidence+0.32', 'intent_directness+0.066']
+source=C:\Users\home\Desktop\ai-server\data\rag_documents\food\meat_reduction_low_carbon_food_substitution.pdf
+page=10
+preview=emissions (625.6 kgCo2eq/person/year) by redistributing the GHG contribution of each food (Fig 4). This analysis highlights geographical differences in dietary patterns of other fo
+
+[RAG HYBRID RERANK] 2
+score=0.7681
+cross_encoder_raw=2.2627
+cross_encoder_norm=0.9057
+rrf_norm=0.5341
+rrf_rank=20
+retrieval_appearances=1
+behavior_adjustment=+0.0450
+intent_norm=0.7368
+behavior_reasons=['meat_alternative+0.045(1)']
+evidence_score=0.7063
+evidence_reasons=['query_overlap=0.000', 'effect_carbon_reduction+0.18', 'quantitative_presence+0.12(8)', 'effect_carbon_near+0.14', 'effect_quantitative_near+0.20', 'intent_directness+0.066']
+source=C:\Users\home\Desktop\ai-server\data\rag_documents\food\food_report_2022.pdf
+page=77
+preview=제2장 식품시스템의 온실가스 발생 현황과 관련 정책 |35 2.2. 식품 부문 탄소중립 정책 2.2.1. 농림축산식품부 2050 농식품 탄소중립 추진전략에서 제시한 식품 부문 온실가스 감축 정책은 유통과 소비 부문으로 나누어져 있으며, ① 농식품 유통거리 축소, ② 식생활 개선 및 대체식품 육성을 목표로 한다. <표 2-
+
+[RAG HYBRID RERANK] 3
+score=0.7476
+cross_encoder_raw=0.2016
+cross_encoder_norm=0.5502
+rrf_norm=1.0000
+rrf_rank=1
+retrieval_appearances=2
+behavior_adjustment=+0.0000
+intent_norm=0.5000
+behavior_reasons=[]
+evidence_score=1.0000
+evidence_reasons=['query_overlap=0.800', 'effect_carbon_reduction+0.18', 'quantitative_presence+0.12(2)', 'topic_effect_near+0.18', 'effect_carbon_mid+0.07', 'direct_quantitative_evidence+0.32']
+source=C:\Users\home\Desktop\ai-server\data\rag_documents\food\meat_reduction_low_carbon_food_substitution.pdf
+page=16
+preview=The TFA content of fat from pork and poultry are generally below 1% of total fatty acids, but the content may vary, primarily depending on the TFA content of the feed (Aro et al., 
+
+[RAG HYBRID RERANK] 4
+score=0.7372
+cross_encoder_raw=1.5389
+cross_encoder_norm=0.8233
+rrf_norm=0.5685
+rrf_rank=7
+retrieval_appearances=1
+behavior_adjustment=+0.0450
+intent_norm=0.7368
+behavior_reasons=['meat_alternative+0.045(1)']
+evidence_score=0.7063
+evidence_reasons=['query_overlap=0.000', 'effect_carbon_reduction+0.18', 'quantitative_presence+0.12(4)', 'effect_carbon_near+0.14', 'effect_quantitative_near+0.20', 'intent_directness+0.066']
+source=C:\Users\home\Desktop\ai-server\data\rag_documents\food\food_report_2022.pdf
+page=120
+preview=정책이 시행된 이후에 이산화탄소 배출량을 매년 약 500톤 줄일 수 있었으며, 소 비자가 학교 내 식품소비 과정에서 발생시키는 탄소 배출량(식품 1kg당)은 2018 년 기준 2015년 대비 약 33% 감소한 것으로 나타났다. 실제로 식당 급식 시설의 식재료로 과일 및 채소 사용량이 이전보다 훨씬 증가하였으며, 소고기와 
+
+[RAG HYBRID RERANK] 5
+score=0.7341
+cross_encoder_raw=0.9098
+cross_encoder_norm=0.7130
+rrf_norm=0.5184
+rrf_rank=25
+retrieval_appearances=1
+behavior_adjustment=+0.0000
+intent_norm=0.5000
+behavior_reasons=[]
+evidence_score=1.0000
+evidence_reasons=['query_overlap=0.400', 'effect_carbon_reduction+0.18', 'quantitative_presence+0.12(15)', 'topic_effect_near+0.18', 'effect_carbon_near+0.14', 'direct_quantitative_evidence+0.32']
+source=C:\Users\home\Desktop\ai-server\data\rag_documents\food\한국농촌경제연구원.pdf
+page=15
+preview=xii management stage’ could reduce 475,000 tons of greenhouse gas reduction (CO2eq.) for Korean beef and 157,000 tons of dairy cows under the scenario which consisted of 78% penetr
+
+[RAG HYBRID RERANK] 6
+score=0.7201
+cross_encoder_raw=2.0384
+cross_encoder_norm=0.8848
+rrf_norm=0.5508
+rrf_rank=13
+retrieval_appearances=1
+behavior_adjustment=+0.0000
+intent_norm=0.5000
+behavior_reasons=[]
+evidence_score=0.6400
+evidence_reasons=['query_overlap=0.000', 'effect_carbon_reduction+0.18', 'quantitative_presence+0.12(31)', 'effect_carbon_near+0.14', 'effect_quantitative_near+0.20']
+source=C:\Users\home\Desktop\ai-server\data\rag_documents\food\한국농촌경제연구원.pdf
+page=121
+preview=94 | 2050 탄소중립 시나리오의 배출전망치(BAU)를 기준으로 예상 기술 도입률 및 도입 효과를 적용한 결과는 다음과 같다. 적정단백질 사료 도입 의향이 있는 한육우 농가가 적정단백질 사료를 급이한다 면, 가축분뇨 처리부문에서 배출되는 아산화질소를 2030년(BAU) 대비 3만 2천 톤 ~ 4만 1천톤 CO2eq. 
+
+[RAG HYBRID RERANK] 7
+score=0.7033
+cross_encoder_raw=-0.0767
+cross_encoder_norm=0.4808
+rrf_norm=0.9276
+rrf_rank=3
+retrieval_appearances=2
+behavior_adjustment=+0.0000
+intent_norm=0.5000
+behavior_reasons=[]
+evidence_score=1.0000
+evidence_reasons=['query_overlap=0.600', 'effect_carbon_reduction+0.18', 'quantitative_presence+0.12(4)', 'topic_effect_near+0.18', 'effect_carbon_near+0.14', 'direct_quantitative_evidence+0.32']
+source=C:\Users\home\Desktop\ai-server\data\rag_documents\food\meat_reduction_low_carbon_food_substitution.pdf
+page=3
+preview=in meat consumption can have a measurable environmental benefit both in terms of GHG emissions and water footprint [20, 21]. A recent study, which used data on food consumption in 
+
+[RAG HYBRID RERANK] 8
+score=0.6827
+cross_encoder_raw=1.3750
+cross_encoder_norm=0.7982
+rrf_norm=0.5595
+rrf_rank=10
+retrieval_appearances=1
+behavior_adjustment=+0.0000
+intent_norm=0.5000
+behavior_reasons=[]
+evidence_score=0.6400
+evidence_reasons=['query_overlap=0.000', 'effect_carbon_reduction+0.18', 'quantitative_presence+0.12(2)', 'effect_carbon_near+0.14', 'effect_quantitative_near+0.20']
+source=C:\Users\home\Desktop\ai-server\data\rag_documents\food\한국농촌경제연구원.pdf
+page=153
+preview=126 | <표 4-29> 축산부문 생산성 향상에 따른 온실가스 감축 효과와 평가액 구분 생산량 고정 제약조건 부여 (자체 산업 생산량 고정) 생산량 고정 제약조건 미부여 (자체 산업 생산량 변화 허용) 한우 젖소 돼지 가금 한우 젖소 돼지 가금 생산성 5% 향상 경제 전체 온실가스 배출변화(천 톤 CO2eq.) -1,4
+
+[RAG HYBRID RERANK] 9
+score=0.6681
+cross_encoder_raw=1.2424
+cross_encoder_norm=0.7760
+rrf_norm=0.5341
+rrf_rank=19
+retrieval_appearances=1
+behavior_adjustment=+0.0000
+intent_norm=0.5000
+behavior_reasons=[]
+evidence_score=0.6400
+evidence_reasons=['query_overlap=0.000', 'effect_carbon_reduction+0.18', 'quantitative_presence+0.12(37)', 'effect_carbon_near+0.14', 'effect_quantitative_near+0.20']
+source=C:\Users\home\Desktop\ai-server\data\rag_documents\food\한국농촌경제연구원.pdf
+page=120
+preview=제4장 온실가스 감축 기술 도입의 효과 분석 |93 축종별 분석 결과 한육우 농가의 도입 의향은 35.5%이며, 적정단백질 급여로 사료 내 단백질 함량을 1% 저감할 경우 가축분뇨 처리부문에서 배출되는 N2O는 3만 2천 톤 ~ 4만 1천 톤 CO2eq. 감축할 수 있는 것으로 분석되었다. 돼지 농가의 도입 의향은 40.
+
+[RAG HYBRID RERANK] 10
+score=0.6628
+cross_encoder_raw=0.6861
+cross_encoder_norm=0.6651
+rrf_norm=0.5508
+rrf_rank=14
+retrieval_appearances=1
+behavior_adjustment=+0.0450
+intent_norm=0.7368
+behavior_reasons=['meat_alternative+0.045(2)']
+evidence_score=0.7063
+evidence_reasons=['query_overlap=0.000', 'effect_carbon_reduction+0.18', 'quantitative_presence+0.12(15)', 'effect_carbon_near+0.14', 'effect_quantitative_near+0.20', 'intent_directness+0.066']
+source=C:\Users\home\Desktop\ai-server\data\rag_documents\food\탄소중립을 위한 식품소비 단계의 온실가스 감축 대안과 효과분석.pdf
+page=5
+preview=60 탄소중립을 위한 식품소비 단계의 온실가스 감축 대안과 효과분석 에 대한 지불의사와 온실가스 감축효과를 추정하였다. 온실가스 감축효과 분석이 실시된 주요 대안은 ① 대체식품, ② 제한적 육식(저탄소 식단) 실 천, ③ 저탄소 교육·정보제공, ④저탄소 인증제도, ⑤ 식품 폐기 이다.  첫째, ‘저탄소 식품 개발 및 보
+
+[RAG HYBRID RERANK] ================================
+
+[RAG TOPK] slot=overall score=0.8869 evidence=1.0000 source=C:\Users\home\Desktop\ai-server\data\rag_documents\food\meat_reduction_low_carbon_food_substitution.pdf page=10
+[RAG TOPK] slot=evidence score=0.7476 evidence=1.0000 intent=0.5000 source=C:\Users\home\Desktop\ai-server\data\rag_documents\food\meat_reduction_low_carbon_food_substitution.pdf page=16
+[RAG TOPK] slot=fill_relaxed score=0.7681 evidence=0.7063 source=C:\Users\home\Desktop\ai-server\data\rag_documents\food\food_report_2022.pdf page=77
+
+[RAG] ==============================
+[RAG] korean_query=pork consumption carbon emissions reduction
+[RAG] english_query=food consumption sustainable food consumption carbon footprint
+[RAG] category=food
+[RAG] food_intent=meat_substitution
+[RAG] korean_candidate_count=20
+[RAG] english_candidate_count=20
+[RAG] bm25_candidate_count=20
+[RAG] fused_candidate_count=40
+[RAG] cleaned_candidate_count=38
+[RAG] final_count=3
+
+[RAG] RESULT 1
+source=C:\Users\home\Desktop\ai-server\data\rag_documents\food\meat_reduction_low_carbon_food_substitution.pdf
+page=10
+category=food
+preview=emissions (625.6 kgCo2eq/person/year) by redistributing the GHG contribution of each food (Fig 4). This analysis highlights geographical differences in dietary patterns of other foods. In par- ticular, the center and south of Italy have the highest consumption of pork (119g/week/person) while chicke
+
+[RAG] RESULT 2
+source=C:\Users\home\Desktop\ai-server\data\rag_documents\food\meat_reduction_low_carbon_food_substitution.pdf
+page=16
+category=food
+preview=The TFA content of fat from pork and poultry are generally below 1% of total fatty acids, but the content may vary, primarily depending on the TFA content of the feed (Aro et al., 1998a). Among the specific efforts to be set up in this field, there is the need to raise awareness of the environmental
+
+[RAG] RESULT 3
+source=C:\Users\home\Desktop\ai-server\data\rag_documents\food\food_report_2022.pdf
+page=77
+category=food
+preview=제2장 식품시스템의 온실가스 발생 현황과 관련 정책 |35 2.2. 식품 부문 탄소중립 정책 2.2.1. 농림축산식품부 2050 농식품 탄소중립 추진전략에서 제시한 식품 부문 온실가스 감축 정책은 유통과 소비 부문으로 나누어져 있으며, ① 농식품 유통거리 축소, ② 식생활 개선 및 대체식품 육성을 목표로 한다. <표 2-10> 농식품부의 식품 부문에서의 온실가스 감축 정책 개요 정책명 내용 온실가스 배출저감 [유통] 농식품 유통거리 축소  유통거리 축소 등 농식품 푸드 마일리지 감축을 통해 농식품 유통과정에서 발생하는 온실가스 최
+[RAG] ==============================
+
+[RAG] preferred_category=food
+
+[RAG HYBRID RERANK] ================================
+
+[RAG HYBRID RERANK] 1
+score=0.8869
+cross_encoder_raw=4.6076
+cross_encoder_norm=0.9901
+rrf_norm=0.5423
+rrf_rank=18
+retrieval_appearances=1
+behavior_adjustment=+0.0450
+intent_norm=0.7368
+behavior_reasons=['meat_alternative+0.045(1)']
+evidence_score=1.0000
+evidence_reasons=['query_overlap=0.800', 'effect_carbon_reduction+0.18', 'quantitative_presence+0.12(8)', 'topic_effect_near+0.18', 'effect_carbon_near+0.14', 'direct_quantitative_evidence+0.32', 'intent_directness+0.066']
+source=C:\Users\home\Desktop\ai-server\data\rag_documents\food\meat_reduction_low_carbon_food_substitution.pdf
+page=10
+preview=emissions (625.6 kgCo2eq/person/year) by redistributing the GHG contribution of each food (Fig 4). This analysis highlights geographical differences in dietary patterns of other fo
+
+[RAG HYBRID RERANK] 2
+score=0.7681
+cross_encoder_raw=2.2627
+cross_encoder_norm=0.9057
+rrf_norm=0.5341
+rrf_rank=20
+retrieval_appearances=1
+behavior_adjustment=+0.0450
+intent_norm=0.7368
+behavior_reasons=['meat_alternative+0.045(1)']
+evidence_score=0.7063
+evidence_reasons=['query_overlap=0.000', 'effect_carbon_reduction+0.18', 'quantitative_presence+0.12(8)', 'effect_carbon_near+0.14', 'effect_quantitative_near+0.20', 'intent_directness+0.066']
+source=C:\Users\home\Desktop\ai-server\data\rag_documents\food\food_report_2022.pdf
+page=77
+preview=제2장 식품시스템의 온실가스 발생 현황과 관련 정책 |35 2.2. 식품 부문 탄소중립 정책 2.2.1. 농림축산식품부 2050 농식품 탄소중립 추진전략에서 제시한 식품 부문 온실가스 감축 정책은 유통과 소비 부문으로 나누어져 있으며, ① 농식품 유통거리 축소, ② 식생활 개선 및 대체식품 육성을 목표로 한다. <표 2-
+
+[RAG HYBRID RERANK] 3
+score=0.7476
+cross_encoder_raw=0.2016
+cross_encoder_norm=0.5502
+rrf_norm=1.0000
+rrf_rank=1
+retrieval_appearances=2
+behavior_adjustment=+0.0000
+intent_norm=0.5000
+behavior_reasons=[]
+evidence_score=1.0000
+evidence_reasons=['query_overlap=0.800', 'effect_carbon_reduction+0.18', 'quantitative_presence+0.12(2)', 'topic_effect_near+0.18', 'effect_carbon_mid+0.07', 'direct_quantitative_evidence+0.32']
+source=C:\Users\home\Desktop\ai-server\data\rag_documents\food\meat_reduction_low_carbon_food_substitution.pdf
+page=16
+preview=The TFA content of fat from pork and poultry are generally below 1% of total fatty acids, but the content may vary, primarily depending on the TFA content of the feed (Aro et al., 
+
+[RAG HYBRID RERANK] 4
+score=0.7372
+cross_encoder_raw=1.5389
+cross_encoder_norm=0.8233
+rrf_norm=0.5685
+rrf_rank=7
+retrieval_appearances=1
+behavior_adjustment=+0.0450
+intent_norm=0.7368
+behavior_reasons=['meat_alternative+0.045(1)']
+evidence_score=0.7063
+evidence_reasons=['query_overlap=0.000', 'effect_carbon_reduction+0.18', 'quantitative_presence+0.12(4)', 'effect_carbon_near+0.14', 'effect_quantitative_near+0.20', 'intent_directness+0.066']
+source=C:\Users\home\Desktop\ai-server\data\rag_documents\food\food_report_2022.pdf
+page=120
+preview=정책이 시행된 이후에 이산화탄소 배출량을 매년 약 500톤 줄일 수 있었으며, 소 비자가 학교 내 식품소비 과정에서 발생시키는 탄소 배출량(식품 1kg당)은 2018 년 기준 2015년 대비 약 33% 감소한 것으로 나타났다. 실제로 식당 급식 시설의 식재료로 과일 및 채소 사용량이 이전보다 훨씬 증가하였으며, 소고기와 
+
+[RAG HYBRID RERANK] 5
+score=0.7341
+cross_encoder_raw=0.9098
+cross_encoder_norm=0.7130
+rrf_norm=0.5184
+rrf_rank=25
+retrieval_appearances=1
+behavior_adjustment=+0.0000
+intent_norm=0.5000
+behavior_reasons=[]
+evidence_score=1.0000
+evidence_reasons=['query_overlap=0.400', 'effect_carbon_reduction+0.18', 'quantitative_presence+0.12(15)', 'topic_effect_near+0.18', 'effect_carbon_near+0.14', 'direct_quantitative_evidence+0.32']
+source=C:\Users\home\Desktop\ai-server\data\rag_documents\food\한국농촌경제연구원.pdf
+page=15
+preview=xii management stage’ could reduce 475,000 tons of greenhouse gas reduction (CO2eq.) for Korean beef and 157,000 tons of dairy cows under the scenario which consisted of 78% penetr
+
+[RAG HYBRID RERANK] 6
+score=0.7201
+cross_encoder_raw=2.0384
+cross_encoder_norm=0.8848
+rrf_norm=0.5508
+rrf_rank=13
+retrieval_appearances=1
+behavior_adjustment=+0.0000
+intent_norm=0.5000
+behavior_reasons=[]
+evidence_score=0.6400
+evidence_reasons=['query_overlap=0.000', 'effect_carbon_reduction+0.18', 'quantitative_presence+0.12(31)', 'effect_carbon_near+0.14', 'effect_quantitative_near+0.20']
+source=C:\Users\home\Desktop\ai-server\data\rag_documents\food\한국농촌경제연구원.pdf
+page=121
+preview=94 | 2050 탄소중립 시나리오의 배출전망치(BAU)를 기준으로 예상 기술 도입률 및 도입 효과를 적용한 결과는 다음과 같다. 적정단백질 사료 도입 의향이 있는 한육우 농가가 적정단백질 사료를 급이한다 면, 가축분뇨 처리부문에서 배출되는 아산화질소를 2030년(BAU) 대비 3만 2천 톤 ~ 4만 1천톤 CO2eq. 
+
+[RAG HYBRID RERANK] 7
+score=0.7033
+cross_encoder_raw=-0.0767
+cross_encoder_norm=0.4808
+rrf_norm=0.9276
+rrf_rank=3
+retrieval_appearances=2
+behavior_adjustment=+0.0000
+intent_norm=0.5000
+behavior_reasons=[]
+evidence_score=1.0000
+evidence_reasons=['query_overlap=0.600', 'effect_carbon_reduction+0.18', 'quantitative_presence+0.12(4)', 'topic_effect_near+0.18', 'effect_carbon_near+0.14', 'direct_quantitative_evidence+0.32']
+source=C:\Users\home\Desktop\ai-server\data\rag_documents\food\meat_reduction_low_carbon_food_substitution.pdf
+page=3
+preview=in meat consumption can have a measurable environmental benefit both in terms of GHG emissions and water footprint [20, 21]. A recent study, which used data on food consumption in 
+
+[RAG HYBRID RERANK] 8
+score=0.6827
+cross_encoder_raw=1.3750
+cross_encoder_norm=0.7982
+rrf_norm=0.5595
+rrf_rank=10
+retrieval_appearances=1
+behavior_adjustment=+0.0000
+intent_norm=0.5000
+behavior_reasons=[]
+evidence_score=0.6400
+evidence_reasons=['query_overlap=0.000', 'effect_carbon_reduction+0.18', 'quantitative_presence+0.12(2)', 'effect_carbon_near+0.14', 'effect_quantitative_near+0.20']
+source=C:\Users\home\Desktop\ai-server\data\rag_documents\food\한국농촌경제연구원.pdf
+page=153
+preview=126 | <표 4-29> 축산부문 생산성 향상에 따른 온실가스 감축 효과와 평가액 구분 생산량 고정 제약조건 부여 (자체 산업 생산량 고정) 생산량 고정 제약조건 미부여 (자체 산업 생산량 변화 허용) 한우 젖소 돼지 가금 한우 젖소 돼지 가금 생산성 5% 향상 경제 전체 온실가스 배출변화(천 톤 CO2eq.) -1,4
+
+[RAG HYBRID RERANK] 9
+score=0.6681
+cross_encoder_raw=1.2424
+cross_encoder_norm=0.7760
+rrf_norm=0.5341
+rrf_rank=19
+retrieval_appearances=1
+behavior_adjustment=+0.0000
+intent_norm=0.5000
+behavior_reasons=[]
+evidence_score=0.6400
+evidence_reasons=['query_overlap=0.000', 'effect_carbon_reduction+0.18', 'quantitative_presence+0.12(37)', 'effect_carbon_near+0.14', 'effect_quantitative_near+0.20']
+source=C:\Users\home\Desktop\ai-server\data\rag_documents\food\한국농촌경제연구원.pdf
+page=120
+preview=제4장 온실가스 감축 기술 도입의 효과 분석 |93 축종별 분석 결과 한육우 농가의 도입 의향은 35.5%이며, 적정단백질 급여로 사료 내 단백질 함량을 1% 저감할 경우 가축분뇨 처리부문에서 배출되는 N2O는 3만 2천 톤 ~ 4만 1천 톤 CO2eq. 감축할 수 있는 것으로 분석되었다. 돼지 농가의 도입 의향은 40.
+
+[RAG HYBRID RERANK] 10
+score=0.6628
+cross_encoder_raw=0.6861
+cross_encoder_norm=0.6651
+rrf_norm=0.5508
+rrf_rank=14
+retrieval_appearances=1
+behavior_adjustment=+0.0450
+intent_norm=0.7368
+behavior_reasons=['meat_alternative+0.045(2)']
+evidence_score=0.7063
+evidence_reasons=['query_overlap=0.000', 'effect_carbon_reduction+0.18', 'quantitative_presence+0.12(15)', 'effect_carbon_near+0.14', 'effect_quantitative_near+0.20', 'intent_directness+0.066']
+source=C:\Users\home\Desktop\ai-server\data\rag_documents\food\탄소중립을 위한 식품소비 단계의 온실가스 감축 대안과 효과분석.pdf
+page=5
+preview=60 탄소중립을 위한 식품소비 단계의 온실가스 감축 대안과 효과분석 에 대한 지불의사와 온실가스 감축효과를 추정하였다. 온실가스 감축효과 분석이 실시된 주요 대안은 ① 대체식품, ② 제한적 육식(저탄소 식단) 실 천, ③ 저탄소 교육·정보제공, ④저탄소 인증제도, ⑤ 식품 폐기 이다.  첫째, ‘저탄소 식품 개발 및 보
+
+[RAG HYBRID RERANK] ================================
+
+[RAG TOPK] slot=overall score=0.8869 evidence=1.0000 source=C:\Users\home\Desktop\ai-server\data\rag_documents\food\meat_reduction_low_carbon_food_substitution.pdf page=10
+[RAG TOPK] slot=evidence score=0.7476 evidence=1.0000 intent=0.5000 source=C:\Users\home\Desktop\ai-server\data\rag_documents\food\meat_reduction_low_carbon_food_substitution.pdf page=16
+[RAG TOPK] slot=fill_relaxed score=0.7681 evidence=0.7063 source=C:\Users\home\Desktop\ai-server\data\rag_documents\food\food_report_2022.pdf page=77
+
+[RAG] ==============================
+[RAG] korean_query=pork consumption carbon emissions reduction
+[RAG] english_query=food consumption sustainable food consumption carbon footprint
+[RAG] category=food
+[RAG] food_intent=meat_substitution
+[RAG] korean_candidate_count=20
+[RAG] english_candidate_count=20
+[RAG] bm25_candidate_count=20
+[RAG] fused_candidate_count=40
+[RAG] cleaned_candidate_count=38
+[RAG] final_count=3
+
+[RAG] RESULT 1
+source=C:\Users\home\Desktop\ai-server\data\rag_documents\food\meat_reduction_low_carbon_food_substitution.pdf
+page=10
+category=food
+preview=emissions (625.6 kgCo2eq/person/year) by redistributing the GHG contribution of each food (Fig 4). This analysis highlights geographical differences in dietary patterns of other foods. In par- ticular, the center and south of Italy have the highest consumption of pork (119g/week/person) while chicke
+
+[RAG] RESULT 2
+source=C:\Users\home\Desktop\ai-server\data\rag_documents\food\meat_reduction_low_carbon_food_substitution.pdf
+page=16
+category=food
+preview=The TFA content of fat from pork and poultry are generally below 1% of total fatty acids, but the content may vary, primarily depending on the TFA content of the feed (Aro et al., 1998a). Among the specific efforts to be set up in this field, there is the need to raise awareness of the environmental
+
+[RAG] RESULT 3
+source=C:\Users\home\Desktop\ai-server\data\rag_documents\food\food_report_2022.pdf
+page=77
+category=food
+preview=제2장 식품시스템의 온실가스 발생 현황과 관련 정책 |35 2.2. 식품 부문 탄소중립 정책 2.2.1. 농림축산식품부 2050 농식품 탄소중립 추진전략에서 제시한 식품 부문 온실가스 감축 정책은 유통과 소비 부문으로 나누어져 있으며, ① 농식품 유통거리 축소, ② 식생활 개선 및 대체식품 육성을 목표로 한다. <표 2-10> 농식품부의 식품 부문에서의 온실가스 감축 정책 개요 정책명 내용 온실가스 배출저감 [유통] 농식품 유통거리 축소  유통거리 축소 등 농식품 푸드 마일리지 감축을 통해 농식품 유통과정에서 발생하는 온실가스 최
+[RAG] ==============================
+

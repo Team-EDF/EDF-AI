@@ -1,3 +1,4 @@
+
 from fastapi import (
     APIRouter,
     Depends,
@@ -26,8 +27,13 @@ async def feedback_chat(
     conn=Depends(get_db),
 ):
     """
-    저장된 소비기록(record_id)을 기준으로
-    RAG + Gemini 친환경 피드백을 생성한다.
+    채팅 유형에 따라 친환경 피드백을 생성한다.
+
+    RECEIPT:
+        Spring Boot에서 전달한 영수증 소비내역 기반 상담
+
+    HOUSEHOLD:
+        Spring Boot에서 전달한 관리비 데이터 기반 상담
     """
 
     try:
@@ -36,21 +42,30 @@ async def feedback_chat(
             conversation_id=request.conversation_id,
             record_id=request.record_id,
             user_message=request.message,
+            chat_type=request.chat_type,
+            household_summary=request.household_summary,
+            receipt_summary=request.receipt_summary,
             conn=conn,
         )
 
-        return FeedbackChatResponse(
-            **result
+        return (
+            FeedbackChatResponse(
+                **result,
+                chat_type=request.chat_type,
+            )
+            if "chat_type" not in result
+            else FeedbackChatResponse(**result)
         )
 
     except ValueError as error:
-        # 존재하지 않는 record_id
         raise HTTPException(
-            status_code=404,
+            status_code=400,
             detail=str(error),
         ) from error
 
     except Exception as error:
+        import traceback
+        traceback.print_exc()
         print(
             "[Feedback API] "
             f"피드백 생성 실패: "
@@ -59,5 +74,5 @@ async def feedback_chat(
 
         raise HTTPException(
             status_code=500,
-            detail=f"피드백 생성 실패: {error}",
+            detail="피드백 생성 중 서버 오류가 발생했습니다.",
         ) from error
