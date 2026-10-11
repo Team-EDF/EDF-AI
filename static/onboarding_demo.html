@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GreenStep – 온보딩 설문 데모</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', sans-serif; background: #f0f4f0; color: #1a2e1a; min-height: 100vh; }
+
+    header {
+      background: #2d6a2d; color: white;
+      padding: 18px 32px; display: flex; align-items: center; gap: 12px;
+    }
+    header h1 { font-size: 1.4rem; font-weight: 700; }
+    header span { font-size: 0.9rem; opacity: 0.8; }
+
+    .container {
+      max-width: 640px; margin: 32px auto; padding: 0 16px 48px;
+    }
+
+    .card {
+      background: white; border-radius: 12px; padding: 24px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      margin-bottom: 20px;
+    }
+    .card h2 {
+      font-size: 1rem; font-weight: 600; color: #2d6a2d;
+      margin-bottom: 16px; padding-bottom: 8px; border-bottom: 2px solid #e8f5e8;
+    }
+
+    .question { margin-bottom: 18px; }
+    .question label.q-title {
+      display: block; font-weight: 600; margin-bottom: 8px; font-size: 0.95rem;
+    }
+    .options { display: flex; flex-direction: column; gap: 6px; }
+    .options label {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 12px; border: 1px solid #e0e6e0; border-radius: 8px;
+      cursor: pointer; font-size: 0.9rem;
+    }
+    .options label:hover { background: #f5faf5; }
+    .options input { accent-color: #2d6a2d; }
+
+    button {
+      width: 100%; padding: 14px; border: none; border-radius: 10px;
+      background: #2d6a2d; color: white; font-size: 1rem; font-weight: 700;
+      cursor: pointer;
+    }
+    button:hover { background: #245524; }
+
+    #result { display: none; }
+    #result.show { display: block; }
+
+    .target-kg {
+      font-size: 2rem; font-weight: 800; color: #2d6a2d;
+    }
+    .message { margin-top: 8px; font-size: 0.95rem; }
+    .breakdown {
+      margin-top: 16px; font-size: 0.85rem; color: #555;
+      display: flex; flex-wrap: wrap; gap: 8px;
+    }
+    .breakdown span {
+      background: #f0f4f0; padding: 4px 10px; border-radius: 20px;
+    }
+    .notice {
+      font-size: 0.78rem; color: #888; margin-top: 24px; line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>GreenStep</h1>
+    <span>온보딩 설문 → 추천 목표 데모 (내부 테스트 전용)</span>
+  </header>
+
+  <div class="container">
+    <form class="card" id="survey-form">
+      <h2>가벼운 설문 몇 가지만 알려주세요</h2>
+
+      <div class="question">
+        <label class="q-title">1. 이동은 주로 뭘로 하세요?</label>
+        <div class="options">
+          <label><input type="radio" name="transport" value="car" required> 자가용</label>
+          <label><input type="radio" name="transport" value="public_transit"> 대중교통</label>
+          <label><input type="radio" name="transport" value="walk_bike"> 도보·자전거</label>
+        </div>
+      </div>
+
+      <div class="question" id="q-transport-spend-car" style="display:none;">
+        <label class="q-title">1-1. 한 달 자동차 관련 지출(유류비·주차비 등)은 얼마나 되세요?</label>
+        <div class="options">
+          <label><input type="radio" name="transport_spend" value="under_100k"> 10만원 이하</label>
+          <label><input type="radio" name="transport_spend" value="100k_to_300k"> 10~30만원</label>
+          <label><input type="radio" name="transport_spend" value="over_300k"> 30만원 이상</label>
+        </div>
+      </div>
+
+      <div class="question" id="q-transport-spend-public" style="display:none;">
+        <label class="q-title">1-1. 한 달 대중교통비 지출은 얼마나 되세요?</label>
+        <div class="options">
+          <label><input type="radio" name="transport_spend" value="under_30k"> 3만원 이하</label>
+          <label><input type="radio" name="transport_spend" value="30k_to_70k"> 3~7만원</label>
+          <label><input type="radio" name="transport_spend" value="over_70k"> 7만원 이상</label>
+        </div>
+      </div>
+
+      <div class="question">
+        <label class="q-title">2. 한 달 카페·음료 지출은 얼마나 되세요?</label>
+        <div class="options">
+          <label><input type="radio" name="cafe_drink" value="none" required> 거의 없음</label>
+          <label><input type="radio" name="cafe_drink" value="under_30k"> 3만원 이하</label>
+          <label><input type="radio" name="cafe_drink" value="over_30k"> 3만원 이상</label>
+        </div>
+      </div>
+
+      <div class="question">
+        <label class="q-title">3. 한 달 식품(식재료·외식) 지출은 얼마나 되세요?</label>
+        <div class="options">
+          <label><input type="radio" name="food" value="under_100k" required> 10만원 이하</label>
+          <label><input type="radio" name="food" value="100k_to_300k"> 10~30만원</label>
+          <label><input type="radio" name="food" value="over_300k"> 30만원 이상</label>
+        </div>
+      </div>
+
+      <div class="question">
+        <label class="q-title">4. 한 달 온오프라인 쇼핑 지출은 얼마나 되세요?</label>
+        <div class="options">
+          <label><input type="radio" name="shopping" value="under_50k" required> 5만원 이하</label>
+          <label><input type="radio" name="shopping" value="50k_to_150k"> 5~15만원</label>
+          <label><input type="radio" name="shopping" value="over_150k"> 15만원 이상</label>
+        </div>
+      </div>
+
+      <div class="question">
+        <label class="q-title">5. 친환경 제품을 써 본 적 있나요?</label>
+        <div class="options">
+          <label><input type="radio" name="eco_interest" value="not_interested" required> 별로 관심 없음</label>
+          <label><input type="radio" name="eco_interest" value="interested_not_tried"> 없지만 관심 있음</label>
+          <label><input type="radio" name="eco_interest" value="tried"> 있음</label>
+        </div>
+      </div>
+
+      <div class="question">
+        <label class="q-title">6. 이번 달 각오는요?</label>
+        <div class="options">
+          <label><input type="radio" name="goal_intent" value="light_start" required> 가볍게 시작</label>
+          <label><input type="radio" name="goal_intent" value="serious_reduction"> 확실히 줄여보기</label>
+          <label><input type="radio" name="goal_intent" value="just_looking"> 일단 구경만</label>
+        </div>
+      </div>
+
+      <button type="submit">결과 확인하기</button>
+    </form>
+
+    <div class="card" id="result">
+      <h2>당신의 이번 달 추천 목표</h2>
+      <div class="target-kg"><span id="target-kg-value">-</span> kg CO2e</div>
+      <div class="message" id="result-message"></div>
+      <div class="breakdown" id="result-breakdown"></div>
+    </div>
+
+    <p class="notice">
+      ※ 이 페이지는 백엔드/프론트에 아직 반영되지 않은 AI 파트 내부 테스트용 데모입니다.
+      실제 설문 문항과 저장은 백엔드 담당자가 별도로 구현할 예정이며,
+      이 데모의 필드명·옵션값은 그때 다시 맞춰질 수 있습니다.
+    </p>
+  </div>
+
+  <script>
+    const form = document.getElementById('survey-form');
+    const resultCard = document.getElementById('result');
+
+    const carQuestion = document.getElementById('q-transport-spend-car');
+    const publicQuestion = document.getElementById('q-transport-spend-public');
+
+    function updateTransportFollowUp() {
+      const selected = form.querySelector('input[name="transport"]:checked');
+      carQuestion.style.display = 'none';
+      publicQuestion.style.display = 'none';
+      form.querySelectorAll('input[name="transport_spend"]').forEach(el => { el.checked = false; });
+
+      if (!selected) return;
+      if (selected.value === 'car') carQuestion.style.display = 'block';
+      if (selected.value === 'public_transit') publicQuestion.style.display = 'block';
+      // walk_bike는 후속 질문 없음 (지출 0원 처리)
+    }
+
+    form.querySelectorAll('input[name="transport"]').forEach(el => {
+      el.addEventListener('change', updateTransportFollowUp);
+    });
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const formData = new FormData(form);
+      const answers = Object.fromEntries(formData.entries());
+
+      try {
+        const res = await fetch('/api/onboarding/target', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(answers),
+        });
+
+        if (!res.ok) {
+          throw new Error('서버 오류: ' + res.status);
+        }
+
+        const data = await res.json();
+
+        const isJustLooking = data.target_carbon_kg === null;
+        document.getElementById('target-kg-value').textContent =
+          isJustLooking ? data.baseline_carbon_kg : data.target_carbon_kg;
+        document.getElementById('result-message').textContent = data.message;
+
+        const breakdownEl = document.getElementById('result-breakdown');
+        breakdownEl.innerHTML = '';
+
+        const baselineSpan = document.createElement('span');
+        baselineSpan.textContent = `예상 배출량(baseline): ${data.baseline_carbon_kg}kg`;
+        breakdownEl.appendChild(baselineSpan);
+
+        if (!isJustLooking) {
+          const rateSpan = document.createElement('span');
+          rateSpan.textContent = `감축률: ${Math.round(data.reduction_rate * 100)}%`;
+          breakdownEl.appendChild(rateSpan);
+        }
+
+        Object.entries(data.carbon_breakdown_kg).forEach(([key, value]) => {
+          const span = document.createElement('span');
+          span.textContent = `${key}: ${value}kg`;
+          breakdownEl.appendChild(span);
+        });
+
+        resultCard.classList.add('show');
+        resultCard.scrollIntoView({ behavior: 'smooth' });
+      } catch (err) {
+        alert('결과를 가져오지 못했습니다: ' + err.message);
+      }
+    });
+  </script>
+</body>
+</html>

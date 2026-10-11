@@ -1,3 +1,4 @@
+from rapidfuzz.fuzz import ratio as rapidfuzz_ratio
 import re
 import math
 import hashlib
@@ -2101,7 +2102,7 @@ def _near_duplicate_similarity(text_a: str, text_b: str) -> float:
     if min(len(a), len(b)) < 180:
         return 0.0
 
-    seq_score = SequenceMatcher(None, a[:5000], b[:5000], autojunk=False).ratio()
+    seq_score = rapidfuzz_ratio(a[:5000], b[:5000]) / 100.0
     tokens_a = _token_set(a)
     tokens_b = _token_set(b)
     union = tokens_a | tokens_b
@@ -3322,7 +3323,7 @@ def search_rag(
     # ========================================================
 
     final_docs = cross_encoder_rerank_documents(
-        docs=candidate_docs,
+        docs=candidate_docs[:30],
         query=korean_query,
         k=k,
         category=preferred_category,

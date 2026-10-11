@@ -1,3 +1,5 @@
+import threading
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -5,17 +7,22 @@ from fastapi.staticfiles import StaticFiles
 
 from app.database import Base, engine
 from app.db_migrations import run_db_migrations
+from app.db_seed import seed_reference_data
 
 from app.api.routes import (
+    challenges,
     feedback,
+    household,
     merchant,
     ocr,
-    utility_bill,
-    utility_bill_gemini_test_route,
+    onboarding,
+    profile,
 )
 
 from app.services.rag_index_service import build_rag_index
 from app.services.classifier import MerchantClassifier
+from app.services.challenge_explainer import warm_up as warm_up_llm
+from app.services.challenge_verifier import warm_up as warm_up_verifier
 
 # ChatHistory는 앱 어디서도 import되지 않으면 Base.metadata에
 # 등록되지 않으므로 create_all() 실행 전에 import해야 한다.
@@ -67,15 +74,17 @@ app.add_middleware(
 # POST /api/ocr/classify
 #   → 영수증 OCR + 분류 + 탄소 계산
 #
-# POST /api/utility-bill/analyze
-#   → 관리비 고지서 OCR + 파싱 + 탄소 계산
+# POST /api/household/read-bill
+#   → 관리비 고지서 이미지 판독 (인증용, 최근 13개월 제한)
+#
+# POST /api/household/carbon
+#   → 가정 에너지 사용량/금액 기반 탄소 계산
+#
+# POST /api/household/analyze
+#   → 관리비 고지서 Gemini 판독 + 탄소 계산 (과거 고지서 허용)
 #
 # POST /feedback/chat
 #   → 소비기록 기반 AI 피드백 채팅
-#
-# 비교 테스트 API:
-# POST /api/utility-bill/gemini-test
-#   → Gemini Vision으로 관리비 고지서 이미지 분석
 #
 # merchant.router / ocr.router 안의 나머지 엔드포인트
 # (/api/classify, /api/ocr/clova/classify 등)는
@@ -106,47 +115,43 @@ app.include_router(
 
 
 # ------------------------------------------------------------
-# 관리비 고지서 OCR + 파싱 + 탄소 계산
-#
-# utility_bill.router 내부 prefix:
-#   /utility-bill
-#
-# 최종 API:
-#   POST /api/utility-bill/analyze
+# 온보딩 설문 -> 추천 목표 계산 (데모/내부 테스트 전용, 공식 계약 아님)
 # ------------------------------------------------------------
 
 app.include_router(
-    utility_bill.router,
+    onboarding.router,
     prefix="/api",
+    tags=["onboarding-demo"],
 )
 
 
-# ------------------------------------------------------------
-# Gemini Vision 관리비 고지서 비교 테스트
-#
-# utility_bill_gemini_test_route.router 내부 prefix:
-#   /api/utility-bill
-#
-# 최종 API:
-#   POST /api/utility-bill/gemini-test
-#
-# 기존 관리비 분석 API와 독립적으로 실행한다.
-# ------------------------------------------------------------
-
+# Green Profile (설문 -> 영역별 레벨 + 실천 성향 + 추천 목표)
 app.include_router(
-    utility_bill_gemini_test_route.router,
+    profile.router,
+    prefix="/api",
+    tags=["profile"],
 )
 
 
-# ------------------------------------------------------------
-# 소비기록 기반 RAG + Gemini 피드백 채팅
-#
-# feedback.py 내부 route:
-#   /feedback/chat
-#
-# 따라서 여기서는 prefix를 추가하지 않는다.
-# ------------------------------------------------------------
+# 챌린지 카탈로그 (5영역 x 3난이도 = 15개, BE가 챌린지 테이블 seed에 사용)
+app.include_router(
+    challenges.router,
+    prefix="/api",
+    tags=["challenges"],
+)
 
+
+# 가정 에너지(관리비): Gemini 고지서 판독 + 월간 탄소 계산
+app.include_router(
+    household.router,
+    prefix="/api",
+    tags=["household"],
+)
+
+
+# 소비기록 기반 RAG + Gemini 피드백 채팅
+# feedback.py 내부 route: /feedback/chat
+# 따라서 여기서는 prefix를 추가하지 않는다.
 app.include_router(
     feedback.router,
     tags=["feedback"],
@@ -172,12 +177,8 @@ app.mount(
 
 @app.get("/")
 def serve_ui():
-    """
-    개발용 웹 UI 반환.
-    """
-    return FileResponse(
-        "static/index.html"
-    )
+    """개발용 웹 UI 반환."""
+    return FileResponse("static/index.html")
 
 
 # ============================================================
@@ -194,8 +195,23 @@ def warm_up_models():
     startup 시점의 메모리 peak가 커진다.
 
     RAG vector store는 실제 RAG 요청이 들어올 때 lazy-load 한다.
+
+    로드한 SBERT로 DB 초기화 시 비어 있는 카테고리/임베딩 테이블도 채운다.
     """
-    MerchantClassifier._get_model()
+    model = MerchantClassifier._get_model()
+    seed_reference_data(model)
+
+
+@app.on_event("startup")
+def warm_up_challenge_llm():
+    """
+    챌린지 추천 설명 문구용 Gemini 클라이언트를 백그라운드에서 미리 준비한다.
+    (준비에 약 9초 걸려서, 미리 해 두지 않으면 첫 추천 요청이 느리다.
+     별도 스레드라 서버 기동을 늦추지 않고, 실패해도 기동에는 영향이 없다.)
+    """
+    threading.Thread(target=warm_up_llm, daemon=True).start()
+    # 사진 인증용 Gemini 비전 클라이언트도 미리 준비한다 (첫 호출이 약 18초 걸렸다)
+    threading.Thread(target=warm_up_verifier, daemon=True).start()
 
 
 # ============================================================
@@ -204,12 +220,8 @@ def warm_up_models():
 
 @app.get("/health")
 def health_check():
-    """
-    서버 동작 여부 확인.
-    """
-    return {
-        "status": "ok"
-    }
+    """서버 동작 여부 확인."""
+    return {"status": "ok"}
 
 
 # ============================================================

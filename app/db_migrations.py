@@ -20,10 +20,11 @@ def run_db_migrations(engine: Engine) -> None:
         connection.execute(
             text(
                 """
-                CREATE TABLE IF NOT EXISTS chat_conversations (
+                CREATE TABLE IF NOT EXISTS public.chat_conversations (
                     conversation_id BIGSERIAL PRIMARY KEY,
                     user_id BIGINT NOT NULL,
                     title VARCHAR(200),
+                    chat_type VARCHAR(20) NOT NULL DEFAULT 'RECEIPT',
                     created_at TIMESTAMPTZ DEFAULT NOW(),
                     updated_at TIMESTAMPTZ DEFAULT NOW()
                 )
@@ -32,19 +33,57 @@ def run_db_migrations(engine: Engine) -> None:
         )
 
         # ------------------------------------------------------------
-        # 2. 기존 chat_history에 conversation_id 컬럼 추가
+        # 2. 기존 chat_conversations에 chat_type 컬럼 추가
+        #    기존 대화방은 기본적으로 RECEIPT 유형으로 유지
         # ------------------------------------------------------------
         connection.execute(
             text(
                 """
-                ALTER TABLE chat_history
+                ALTER TABLE public.chat_conversations
+                ADD COLUMN IF NOT EXISTS chat_type VARCHAR(20)
+                NOT NULL DEFAULT 'RECEIPT'
+                """
+            )
+        )
+
+        # ------------------------------------------------------------
+        # 3. 허용되는 채팅방 유형 제한
+        # ------------------------------------------------------------
+        connection.execute(
+            text(
+                """
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1
+                        FROM pg_constraint
+                        WHERE conname = 'chk_chat_conversations_chat_type'
+                          AND conrelid = 'public.chat_conversations'::regclass
+                    ) THEN
+                        ALTER TABLE public.chat_conversations
+                        ADD CONSTRAINT chk_chat_conversations_chat_type
+                        CHECK (chat_type IN ('RECEIPT', 'HOUSEHOLD'));
+                    END IF;
+                END
+                $$
+                """
+            )
+        )
+
+        # ------------------------------------------------------------
+        # 4. 기존 chat_history에 conversation_id 컬럼 추가
+        # ------------------------------------------------------------
+        connection.execute(
+            text(
+                """
+                ALTER TABLE public.chat_history
                 ADD COLUMN IF NOT EXISTS conversation_id BIGINT
                 """
             )
         )
 
         # ------------------------------------------------------------
-        # 3. chat_history -> chat_conversations FK 생성
+        # 5. chat_history -> chat_conversations FK 생성
         #
         # constraint 이름뿐 아니라 실제 대상 테이블까지 확인하여
         # 다른 테이블의 동명 constraint 때문에 누락되지 않도록 한다.
@@ -78,13 +117,28 @@ def run_db_migrations(engine: Engine) -> None:
         )
 
         # ------------------------------------------------------------
-        # 4. conversation_id 조회용 인덱스 생성
+        # 6. conversation_id 조회용 인덱스 생성
         # ------------------------------------------------------------
         connection.execute(
             text(
                 """
                 CREATE INDEX IF NOT EXISTS ix_chat_history_conversation_id
                 ON public.chat_history(conversation_id)
+                """
+            )
+        )
+
+        # ------------------------------------------------------------
+        # 7. Spring Boot 영수증 ID 저장용 컬럼 추가
+        #
+        # 기존 record_id는 AI DB consumption_records의 FK로 유지하고,
+        # source_record_id는 Spring Boot DB의 영수증 ID를 저장한다.
+        # ------------------------------------------------------------
+        connection.execute(
+            text(
+                """
+                ALTER TABLE public.chat_history
+                ADD COLUMN IF NOT EXISTS source_record_id BIGINT
                 """
             )
         )

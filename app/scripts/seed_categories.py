@@ -41,47 +41,57 @@ def setup_databaseToCategory():
     print("main_category, middle_category 테이블 생성 완료.")
 
 
-def process_and_load_xlsx(xlsx_filepath: str):
+CATEGORY_COLUMNS = ["메인 카테고리", "세부 카테고리", "탄소 배출량(kgCo2eq_KRW)"]
+
+
+def load_categories(cursor, xlsx_filepath: str) -> tuple[int, int]:
     """
     XLSX 파일을 읽어 메인 카테고리별로 그룹화 후 main_category → middle_category 순으로 적재.
     XLSX 컬럼: '메인 카테고리', '세부 카테고리', '탄소 배출량(kgCo2eq_KRW)'
     avg_middle_category_carbon = 해당 메인 카테고리 산하 세부 카테고리 탄소배출량 평균값.
+    커밋은 호출자가 담당한다. 반환값: (main 개수, middle 개수)
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    file_name = os.path.basename(xlsx_filepath)
-
-    cols = ["메인 카테고리", "세부 카테고리", "탄소 배출량(kgCo2eq_KRW)"]
+    cols = CATEGORY_COLUMNS
     df = pd.read_excel(xlsx_filepath)
     df.columns = df.columns.str.strip()
     df = df[cols].dropna(subset=["메인 카테고리", "세부 카테고리"])
 
-    try:
-        for main_name, group in df.groupby("메인 카테고리"):
-            avg_carbon = group["탄소 배출량(kgCo2eq_KRW)"].mean()
+    for main_name, group in df.groupby("메인 카테고리"):
+        avg_carbon = group["탄소 배출량(kgCo2eq_KRW)"].mean()
 
+        cursor.execute(
+            """
+            INSERT INTO main_category (main_name, avg_middle_category_carbon, sum_middle_category_carbon)
+            VALUES (%s, %s, 0)
+            ON CONFLICT (main_name) DO UPDATE SET main_name = EXCLUDED.main_name
+            RETURNING main_category_id;
+            """,
+            (main_name, float(avg_carbon)),
+        )
+        main_category_id = cursor.fetchone()[0]
+
+        for _, row in group.iterrows():
             cursor.execute(
                 """
-                INSERT INTO main_category (main_name, avg_middle_category_carbon, sum_middle_category_carbon)
-                VALUES (%s, %s, 0)
-                ON CONFLICT (main_name) DO UPDATE SET main_name = EXCLUDED.main_name
-                RETURNING main_category_id;
+                INSERT INTO middle_category (main_category_id, middle_name, co2eq_KRW)
+                VALUES (%s, %s, %s);
                 """,
-                (main_name, float(avg_carbon)),
+                (main_category_id, row[cols[1]], float(row[cols[2]])),
             )
-            main_category_id = cursor.fetchone()[0]
 
-            for _, row in group.iterrows():
-                cursor.execute(
-                    """
-                    INSERT INTO middle_category (main_category_id, middle_name, co2eq_KRW)
-                    VALUES (%s, %s, %s);
-                    """,
-                    (main_category_id, row[cols[1]], float(row[cols[2]])),
-                )
+    return df["메인 카테고리"].nunique(), len(df)
 
+
+def process_and_load_xlsx(xlsx_filepath: str):
+    """XLSX 파일을 main_category / middle_category에 적재 후 커밋."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    file_name = os.path.basename(xlsx_filepath)
+
+    try:
+        main_count, middle_count = load_categories(cursor, xlsx_filepath)
         conn.commit()
-        print(f"[{file_name}] 적재 완료 — main: {df['메인 카테고리'].nunique()}개, middle: {len(df)}개")
+        print(f"[{file_name}] 적재 완료 — main: {main_count}개, middle: {middle_count}개")
 
     except Exception as e:
         conn.rollback()

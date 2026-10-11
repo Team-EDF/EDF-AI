@@ -1,3 +1,4 @@
+
 from psycopg2.extras import Json
 
 
@@ -5,10 +6,14 @@ def create_conversation(
     conn,
     user_id: int,
     title: str | None = None,
+    chat_type: str = "RECEIPT",
 ) -> int:
     """
     새로운 피드백 채팅방을 생성한다.
     """
+
+    if chat_type not in ("RECEIPT", "HOUSEHOLD"):
+        raise ValueError("지원하지 않는 채팅 유형입니다.")
 
     with conn.cursor() as cursor:
         cursor.execute(
@@ -16,10 +21,12 @@ def create_conversation(
             INSERT INTO chat_conversations
                 (
                     user_id,
-                    title
+                    title,
+                    chat_type
                 )
             VALUES
                 (
+                    %s,
                     %s,
                     %s
                 )
@@ -28,6 +35,7 @@ def create_conversation(
             (
                 user_id,
                 title,
+                chat_type,
             ),
         )
 
@@ -50,10 +58,15 @@ def validate_conversation(
     conn,
     conversation_id: int,
     user_id: int,
+    chat_type: str = "RECEIPT",
 ) -> bool:
     """
-    해당 대화방이 실제로 사용자의 대화방인지 확인한다.
+    해당 대화방이 실제로 사용자의 대화방이고
+    요청한 상담 유형과 일치하는지 확인한다.
     """
+
+    if chat_type not in ("RECEIPT", "HOUSEHOLD"):
+        return False
 
     with conn.cursor() as cursor:
         cursor.execute(
@@ -62,11 +75,13 @@ def validate_conversation(
             FROM chat_conversations
             WHERE conversation_id = %s
               AND user_id = %s
+              AND chat_type = %s
             LIMIT 1;
             """,
             (
                 conversation_id,
                 user_id,
+                chat_type,
             ),
         )
 
@@ -134,9 +149,21 @@ def save_chat_history(
     record_id: int | None = None,
     user_id: int | None = None,
     conversation_id: int | None = None,
+    source_record_id: int | None = None,
 ) -> int:
     """
     사용자 질문과 AI 응답을 chat_history에 저장한다.
+
+    record_id:
+        AI DB consumption_records의 영수증 ID.
+        기존 외래 키 관계를 유지한다.
+
+    source_record_id:
+        Spring Boot DB consumption_records의 영수증 ID.
+        AI DB의 record_id와 별도로 저장한다.
+
+    기존 호출과의 호환성을 위해
+    source_record_id의 기본값은 None으로 유지한다.
     """
 
     with conn.cursor() as cursor:
@@ -146,6 +173,7 @@ def save_chat_history(
                 (
                     user_id,
                     record_id,
+                    source_record_id,
                     conversation_id,
                     user_message,
                     consumption_summary,
@@ -158,6 +186,7 @@ def save_chat_history(
                     %s,
                     %s,
                     %s,
+                    %s,
                     %s
                 )
             RETURNING id;
@@ -165,6 +194,7 @@ def save_chat_history(
             (
                 user_id,
                 record_id,
+                source_record_id,
                 conversation_id,
                 user_message,
                 Json(consumption_summary),
