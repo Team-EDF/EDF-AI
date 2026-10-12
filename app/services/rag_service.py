@@ -1782,6 +1782,54 @@ def build_english_retrieval_query(
 # Cosine Similarity
 # ============================================================
 
+
+# ============================================================
+# 비교형 질문: 대상 보존 검색 및 직접 근거 검증
+# ============================================================
+
+_COMPARISON_FOOD_TERMS = {
+    "beef": ("소고기", "쇠고기", "beef"),
+    "pork": ("돼지고기", "pork"),
+    "chicken": ("닭고기", "chicken", "poultry"),
+    "tofu": ("두부", "tofu"),
+    "legumes": ("콩류", "콩", "legumes", "pulses"),
+    "plant_based_meat": ("대체육", "plant-based meat", "meat substitute"),
+}
+
+
+def detect_food_comparison_targets(query: str) -> tuple[str, str] | None:
+    """명시적으로 언급된 서로 다른 식품 두 개를 탐지한다."""
+    normalized = (query or "").lower()
+    comparison_words = ("대신", "대체", "바꾸", "비교", "차이", "versus", " vs ", "replace", "substitut")
+    if not any(word in normalized for word in comparison_words):
+        return None
+    found = [name for name, aliases in _COMPARISON_FOOD_TERMS.items()
+             if any(alias in normalized for alias in aliases)]
+    return tuple(found[:2]) if len(found) >= 2 else None
+
+
+def build_focused_food_query(query: str) -> str:
+    """장황한 키워드 확장과 별도로 핵심 비교 대상 중심의 검색어를 만든다."""
+    targets = detect_food_comparison_targets(query)
+    if not targets:
+        return ""
+    return f"{targets[0]} versus {targets[1]} greenhouse gas emissions carbon footprint substitution"
+
+
+def assess_food_comparison_evidence(text: str, targets: tuple[str, str] | None) -> str:
+    """직접 비교 가능 여부를 표시한다. 단순 동시 언급은 비교의 증명이 아니다."""
+    if not targets:
+        return "not_applicable"
+    normalized = (text or "").lower()
+    hits = [any(alias in normalized for alias in _COMPARISON_FOOD_TERMS[target])
+            for target in targets]
+    if all(hits):
+        return "both_targets_mentioned"
+    if any(hits):
+        return "one_target_mentioned"
+    return "no_target_mentioned"
+
+
 def cosine_similarity(
     vector_a,
     vector_b,
@@ -2501,18 +2549,10 @@ def cross_encoder_rerank_documents(
     cafe_intent: str | None = None,
     food_intent: str | None = None,
 ):
-    """
-    Cross-Encoder + RRF + intent + Evidence Quality로 최종 relevance를 계산한다.
+    """Cross-Encoder 우선 순위화. RRF와 evidence는 진단용으로만 유지한다.
 
-    final relevance:
-    - Cross-Encoder sigmoid: 45%
-    - RRF normalized score: 18%
-    - intent signal: 10%
-    - query-aware evidence directness/quality: 27%
-
-    핵심:
-    의미 유사도만 높은 일반론보다 질문에 직접 답하는 효과/행동/정량 근거를
-    최종 Top-K에서 우대한다.
+    Cross-Encoder 점수는 확률이 아니므로 고정 절대 임계값을 적용하지 않는다.
+    상위 후보 대비 상대적 점수 차이로 과도하게 떨어지는 문서를 제외한다.
     """
     if not docs:
         return None
@@ -2567,12 +2607,15 @@ def cross_encoder_rerank_documents(
             food_intent=food_intent,
         )
 
-        final_score = (
-            cross_norm * 0.45
-            + rrf_norm * 0.18
-            + intent_norm * 0.10
-            + evidence_score * 0.27
+        comparison_targets = (detect_food_comparison_targets(query)
+                              if category == "food" else None)
+        comparison_evidence = assess_food_comparison_evidence(
+            doc.page_content, comparison_targets
         )
+
+        # 관련성 순위는 Cross-Encoder 원점수로 결정한다.
+        # 근거에 숫자가 있다는 이유로 주제가 다른 문서가 역전되지 않도록 한다.
+        final_score = cross_raw
 
         scored_documents.append(
             {
@@ -2591,6 +2634,7 @@ def cross_encoder_rerank_documents(
                 "behavior_reasons": reasons,
                 "evidence_score": evidence_score,
                 "evidence_reasons": evidence_reasons,
+                "comparison_evidence": comparison_evidence,
             }
         )
 
@@ -2610,6 +2654,7 @@ def cross_encoder_rerank_documents(
             f"\nbehavior_adjustment={item['behavior_adjustment']:+.4f}"
             f"\nintent_norm={item['intent_norm']:.4f}"
             f"\nbehavior_reasons={item['behavior_reasons']}"
+            f"\ncomparison_evidence={item['comparison_evidence']}"
             f"\nevidence_score={item['evidence_score']:.4f}"
             f"\nevidence_reasons={item['evidence_reasons']}"
             f"\nsource={doc.metadata.get('source')}"
@@ -2623,11 +2668,39 @@ def cross_encoder_rerank_documents(
         threshold=0.88,
     )
 
+    comparison_targets = (detect_food_comparison_targets(query)
+                          if category == "food" else None)
+    if comparison_targets:
+        direct = [item for item in deduplicated
+                  if item["comparison_evidence"] == "both_targets_mentioned"]
+        if direct:
+            print(f"[RAG COMPARISON] targets={comparison_targets}; "
+                  f"both-target candidates={len(direct)}; prioritize direct evidence")
+            # 먼저 두 대상이 모두 있는 후보를 선택한다. 나머지는 보조 근거로 사용한다.
+            # 동시 언급은 직접 비교를 보장하지 않으므로 생성 단계에서 재확인이 필요하다.
+            selected = select_diverse_documents(
+                ranked_documents=direct, k=k, max_per_source=2,
+                relevance_margin=1.5, strict_relevance=True,
+            )
+            if len(selected) < k:
+                supplemental = [item for item in deduplicated if item not in direct]
+                if supplemental:
+                    extra = select_diverse_documents(
+                        ranked_documents=supplemental, k=k-len(selected),
+                        max_per_source=2, relevance_margin=1.5,
+                        strict_relevance=True,
+                    )
+                    selected.extend(extra)
+            return [item["doc"] for item in selected]
+        print(f"[RAG COMPARISON] targets={comparison_targets}; "
+              "no chunk mentions both targets; general evidence only")
+
     selected = select_diverse_documents(
         ranked_documents=deduplicated,
         k=k,
         max_per_source=2,
-        relevance_margin=0.08,
+        relevance_margin=1.5,  # Cross-Encoder 원점수 차이; 검증 데이터로 조정 가능
+        strict_relevance=True,
     )
 
     return [item["doc"] for item in selected]
@@ -2715,169 +2788,62 @@ def select_diverse_documents(
     k: int,
     max_per_source: int = 2,
     relevance_margin: float = 0.08,
+    strict_relevance: bool = False,
 ) -> list[dict]:
-    """
-    최종 Top-K를 역할별로 구성한다.
+    """관련성 우선 문서 선택. strict_relevance이면 강제 k 채우기를 하지 않는다.
 
-    1. 종합 relevance 최고 문서 1개 보장
-    2. Evidence Quality/Directness 최고 문서 1개 보장
-    3. 나머지는 종합점수 순으로 채움
-    4. source diversity 유지
+    기존 임베딩 fallback 호출의 동작을 유지하기 위해 기본값은 False이다.
     """
     if not ranked_documents or k <= 0:
         return []
 
-    ranked = sorted(
-        ranked_documents,
-        key=lambda item: item.get("score", 0.0),
-        reverse=True,
-    )
-
+    ranked = sorted(ranked_documents, key=lambda x: x.get("score", 0.0), reverse=True)
+    best_score = ranked[0].get("score", 0.0)
     selected = []
     selected_ids = set()
     source_counts = {}
 
-    def document_id(item: dict) -> tuple:
+    def key(item):
         doc = item["doc"]
-        return (
-            doc.metadata.get("source"),
-            doc.metadata.get("page"),
-            doc.page_content[:160],
-        )
+        return (doc.metadata.get("source"), doc.metadata.get("page"), doc.page_content[:160])
 
-    def source_key(item: dict) -> str:
-        return str(item["doc"].metadata.get("source", ""))
-
-    def can_add(item: dict, enforce_source_limit: bool = True) -> bool:
-        if document_id(item) in selected_ids:
+    def add(item, enforce_source=True):
+        doc_key = key(item)
+        source = str(item["doc"].metadata.get("source", ""))
+        if doc_key in selected_ids:
             return False
-
-        if enforce_source_limit:
-            source = source_key(item)
-            if source_counts.get(source, 0) >= max_per_source:
-                return False
-
-        return True
-
-    def add_item(item: dict) -> bool:
-        if len(selected) >= k or document_id(item) in selected_ids:
+        if enforce_source and source_counts.get(source, 0) >= max_per_source:
             return False
-
         selected.append(item)
-        selected_ids.add(document_id(item))
-
-        source = source_key(item)
+        selected_ids.add(doc_key)
         source_counts[source] = source_counts.get(source, 0) + 1
         return True
 
-    # Slot 1: overall relevance 최고 문서
-    best_overall = ranked[0]
-    add_item(best_overall)
-
-    print(
-        "[RAG TOPK] slot=overall "
-        f"score={best_overall.get('score', 0.0):.4f} "
-        f"evidence={best_overall.get('evidence_score', 0.0):.4f} "
-        f"source={best_overall['doc'].metadata.get('source')} "
-        f"page={best_overall['doc'].metadata.get('page')}"
-    )
-
-    if len(selected) >= k:
-        return selected
-
-    # Slot 2: 직접적인 evidence가 가장 좋은 문서.
-    # 동점이면 intent -> final score -> Cross-Encoder 순으로 선택한다.
-    evidence_ranked = sorted(
-        ranked,
-        key=lambda item: (
-            item.get("evidence_score", 0.0),
-            item.get("intent_norm", 0.0),
-            item.get("score", 0.0),
-            item.get("cross_encoder_norm", 0.0),
-        ),
-        reverse=True,
-    )
-
-    for item in evidence_ranked:
-        if not can_add(item, enforce_source_limit=True):
-            continue
-
-        if item.get("evidence_score", 0.0) < 0.65:
-            break
-
-        add_item(item)
-
-        print(
-            "[RAG TOPK] slot=evidence "
-            f"score={item.get('score', 0.0):.4f} "
-            f"evidence={item.get('evidence_score', 0.0):.4f} "
-            f"intent={item.get('intent_norm', 0.0):.4f} "
-            f"source={item['doc'].metadata.get('source')} "
-            f"page={item['doc'].metadata.get('page')}"
-        )
-        break
-
-    # Slot 3+: 우선 relevance margin 안에서 종합점수 순으로 채운다.
-    best_score = ranked[0].get("score", 0.0)
-
+    # 가장 관련성 높은 문서는 보존한다. 절대적으로 무관한지 판정하려면
+    # 별도 라벨링 평가셋으로 threshold를 보정해야 한다.
     for item in ranked:
         if len(selected) >= k:
             break
-
-        if not can_add(item, enforce_source_limit=True):
-            continue
-
         if best_score - item.get("score", 0.0) > relevance_margin:
             continue
+        if add(item):
+            print("[RAG TOPK] selected "
+                  f"score={item.get('score', 0.0):.4f} "
+                  f"source={item['doc'].metadata.get('source')} "
+                  f"page={item['doc'].metadata.get('page')}")
 
-        add_item(item)
+    if strict_relevance:
+        print(f"[RAG TOPK] strict selection: {len(selected)}/{k} documents")
+        return selected
 
-        print(
-            "[RAG TOPK] slot=fill "
-            f"score={item.get('score', 0.0):.4f} "
-            f"evidence={item.get('evidence_score', 0.0):.4f} "
-            f"source={item['doc'].metadata.get('source')} "
-            f"page={item['doc'].metadata.get('page')}"
-        )
-
-    # margin으로 k를 못 채우면 source diversity만 유지하며 완화한다.
-    if len(selected) < k:
+    # 기존 호출 호환용: strict 모드가 아닐 때만 k까지 보충한다.
+    for enforce_source in (True, False):
         for item in ranked:
             if len(selected) >= k:
                 break
-
-            if not can_add(item, enforce_source_limit=True):
-                continue
-
-            add_item(item)
-
-            print(
-                "[RAG TOPK] slot=fill_relaxed "
-                f"score={item.get('score', 0.0):.4f} "
-                f"evidence={item.get('evidence_score', 0.0):.4f} "
-                f"source={item['doc'].metadata.get('source')} "
-                f"page={item['doc'].metadata.get('page')}"
-            )
-
-    # source limit 때문에도 부족한 경우에만 마지막으로 제한을 완화한다.
-    if len(selected) < k:
-        for item in ranked:
-            if len(selected) >= k:
-                break
-
-            if not can_add(item, enforce_source_limit=False):
-                continue
-
-            add_item(item)
-
-            print(
-                "[RAG TOPK] slot=fill_source_relaxed "
-                f"score={item.get('score', 0.0):.4f} "
-                f"evidence={item.get('evidence_score', 0.0):.4f} "
-                f"source={item['doc'].metadata.get('source')} "
-                f"page={item['doc'].metadata.get('page')}"
-            )
-
+            add(item, enforce_source=enforce_source)
+        if len(selected) >= k:
+            break
     return selected
 
 
@@ -3216,6 +3182,9 @@ def search_rag(
         )
     )
 
+    focused_query = (build_focused_food_query(query)
+                     if preferred_category == "food" else "")
+
     cafe_intent = None
     food_intent = None
 
@@ -3277,6 +3246,12 @@ def search_rag(
             )
         )
 
+    focused_docs = []
+    if focused_query:
+        focused_docs = vectorstore.max_marginal_relevance_search(
+            focused_query, **search_kwargs,
+        )
+
     # ========================================================
     # 3차 개선: BM25 Sparse Retrieval
     # ========================================================
@@ -3287,7 +3262,7 @@ def search_rag(
     )
 
     bm25_query = " ".join(
-        part for part in [korean_query, english_query] if part.strip()
+        part for part in [korean_query, focused_query or english_query] if part.strip()
     )
 
     bm25_docs = bm25_search_documents(
@@ -3304,9 +3279,10 @@ def search_rag(
         ranked_lists=[
             korean_docs,
             english_docs,
+            focused_docs,
             bm25_docs,
         ],
-        k=max(candidate_k * 2, 40),
+        k=max(candidate_k * 3, 60) if focused_query else max(candidate_k * 2, 40),
     )
 
     # ========================================================
@@ -3323,7 +3299,7 @@ def search_rag(
     # ========================================================
 
     final_docs = cross_encoder_rerank_documents(
-        docs=candidate_docs[:30],
+        docs=candidate_docs[:45] if focused_query else candidate_docs[:30],
         query=korean_query,
         k=k,
         category=preferred_category,
@@ -3356,6 +3332,10 @@ def search_rag(
         f"[RAG] korean_query="
         f"{korean_query}"
     )
+
+    if focused_query:
+        print(f"[RAG] focused_query={focused_query}")
+        print(f"[RAG] focused_candidate_count={len(focused_docs)}")
 
     print(
         f"[RAG] english_query="
@@ -3501,7 +3481,20 @@ def search_rag(
             }
         )
 
+    comparison_targets = (detect_food_comparison_targets(query)
+                          if preferred_category == "food" else None)
+    comparison_status = (
+        "both_targets_found" if comparison_targets and any(
+            assess_food_comparison_evidence(doc.page_content, comparison_targets)
+            == "both_targets_mentioned" for doc in final_docs
+        ) else "no_direct_target_match" if comparison_targets else "not_applicable"
+    )
+    if comparison_targets:
+        print(f"[RAG COMPARISON] final_status={comparison_status}")
+
     return {
+        "comparison_evidence_status": comparison_status,
+        "comparison_targets": list(comparison_targets) if comparison_targets else [],
         "query_category":
             preferred_category,
 
