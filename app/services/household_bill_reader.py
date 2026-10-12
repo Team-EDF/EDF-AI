@@ -1,6 +1,6 @@
 """Gemini Vision 관리비 고지서 판독 및 검증.
 
-인증은 최근 13개월 제한, 일반 탄소 분석은 과거 고지서도 허용한다.
+고지서는 과거 기간 제한 없이 받고, 아직 오지 않은 달만 거부한다.
 난방의 원본 사용량/단위를 보존하며, 열에너지 단위만 Gcal로 환산한다.
 """
 import hashlib
@@ -20,7 +20,6 @@ logger = logging.getLogger(__name__)
 KST = timezone(timedelta(hours=9))
 MODEL = "gemini-2.5-flash"
 MAX_BILL_IMAGE_SIDE = 2000
-MAX_MONTHS_BACK = 13
 LIMITS = {
     "electricity_kwh": 3000.0, "electricity_krw": 2_000_000,
     "water_m3": 300.0, "water_krw": 1_000_000,
@@ -110,16 +109,14 @@ def analyze_bill(images: list[bytes], today: date) -> BillReading:
 
 
 def month_in_range(month: str, today: date) -> bool:
-    """YYYY-MM이 현재 월부터 MAX_MONTHS_BACK개월 전 사이인지 검사."""
+    """YYYY-MM이 올바른 형식이고 이번 달 이전인지 검사한다 (과거 기간 제한은 없다)."""
     try:
         year, mon = month.split("-")
         target = date(int(year), int(mon), 1)
     except (ValueError, AttributeError):
         return False
     current = date(today.year, today.month, 1)
-    oldest_year = current.year + (current.month - 1 - MAX_MONTHS_BACK) // 12
-    oldest_month = (current.month - 1 - MAX_MONTHS_BACK) % 12 + 1
-    return date(oldest_year, oldest_month, 1) <= target <= current
+    return target <= current
 
 
 def valid_month(month: str) -> bool:
@@ -234,7 +231,7 @@ def _fail(code: str, message: str, **extra) -> dict:
 
 
 def judge_bill(reading: BillReading, today: date, enforce_month_range: bool = True) -> dict:
-    """인증은 월 제한을 적용하고, 탄소 분석은 과거 월을 허용한다."""
+    """미래 달은 거부한다. 과거 달은 기간 제한 없이 허용한다."""
     if not reading.is_utility_bill:
         return _fail("NOT_A_BILL", "관리비·전기·수도·가스 고지서가 아닌 것 같아요. 고지서가 잘 보이게 다시 찍어 주세요.")
     if not reading.readable:
@@ -244,7 +241,7 @@ def judge_bill(reading: BillReading, today: date, enforce_month_range: bool = Tr
     if not reading.bill_month or not valid_month(reading.bill_month):
         return _fail("MONTH_UNKNOWN", "고지서의 사용 월을 정확히 읽지 못했어요. 월을 확인해 주세요.")
     if enforce_month_range and not month_in_range(reading.bill_month, today):
-        return _fail("MONTH_OUT_OF_RANGE", f"최근 {MAX_MONTHS_BACK}개월 안의 고지서만 인증할 수 있어요.", bill_month=reading.bill_month)
+        return _fail("MONTH_OUT_OF_RANGE", "아직 지나지 않은 달의 고지서는 인증할 수 없어요.", bill_month=reading.bill_month)
 
     values, dropped = clean_values(flatten_values(reading))
     if all(values[key] is None for key in (*VALUE_KEYS, "heat_usage")):

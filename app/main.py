@@ -75,7 +75,7 @@ app.add_middleware(
 #   → 영수증 OCR + 분류 + 탄소 계산
 #
 # POST /api/household/read-bill
-#   → 관리비 고지서 이미지 판독 (인증용, 최근 13개월 제한)
+#   → 관리비 고지서 이미지 판독 (인증용, 과거 기간 제한 없음)
 #
 # POST /api/household/carbon
 #   → 가정 에너지 사용량/금액 기반 탄소 계산

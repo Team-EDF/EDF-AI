@@ -1,7 +1,6 @@
 """가정 에너지(관리비) API: 고지서 판독, 탄소 계산, 통합 분석."""
 
 import logging
-import os
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
@@ -42,13 +41,8 @@ def _read_uploaded_bill(
 def read_household_bill(
     images: list[UploadFile] = File(..., description="고지서 사진 1~3장"),
 ):
-    """운영 환경에서는 최근 13개월 제한, 로컬 테스트에서는 제한 해제."""
-    allow_old_bills = os.getenv("HOUSEHOLD_ALLOW_OLD_BILLS", "false").lower() == "true"
-
-    return _read_uploaded_bill(
-        images,
-        enforce_month_range=not allow_old_bills,
-    )
+    """고지서 판독. 과거 달은 기간 제한 없이 받고, 미래 달만 거부한다."""
+    return _read_uploaded_bill(images)
 
 
 @router.post("/household/carbon", response_model=CarbonResponse)
