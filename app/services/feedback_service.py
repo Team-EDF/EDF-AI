@@ -504,11 +504,35 @@ class FeedbackService:
     # ============================================================
     # 소비내역 문맥 사용 여부 판단
     # ============================================================
+    def _is_consumption_statistics_question(self, user_message: str) -> bool:
+        """단순 소비 통계 조회는 외부 연구자료(RAG)가 필요하지 않다."""
+        message = (user_message or "").strip().lower()
+        if not message:
+            return False
+        # 추천/감축 근거를 함께 요청하면 기존 RAG 동작을 유지한다.
+        if any(word in message for word in (
+            "추천", "개선", "줄이", "줄여", "줄일", "감축", "절감",
+            "대체", "대안", "실천", "방법", "연구", "논문", "근거",
+        )):
+            return False
+        has_statistic = any(word in message for word in (
+            "소비", "지출", "결제", "구매", "영수증", "탄소배출량",
+            "탄소 배출량", "배출량", "탄소발자국", "탄소 발자국",
+        ))
+        has_query = any(word in message for word in (
+            "요약", "정리", "합계", "총액", "얼마", "몇 건", "몇건",
+            "조회", "보여", "알려", "비교", "가장", "높은", "많은",
+            "통계", "월별", "월간", "이번 달", "이번달", "지난달",
+            "지난 달", "전체", "총 ",
+        ))
+        return has_statistic and has_query
+
     def _should_use_consumption_context(
         self,
         user_message: str,
         summary: dict,
         chat_history: list[dict] | None = None,
+        record_id: int | None = None,
     ) -> bool:
         """
         RAG 검색 query에 현재 영수증/소비 품목 정보를 포함할지 판단한다.
@@ -529,6 +553,23 @@ class FeedbackService:
                     f"reason=current_item:{item_name}"
                 )
                 return True
+        # 월별/기간별 소비 통계 질문: 일반 환경 지식 질문과 구분한다.
+        # "탄소배출량이란?"은 제외하고, 기간 + 소비/지출/배출 통계 의도를 확인한다.
+        period_reference = bool(
+            re.search(r"(?:20\d{2}년\s*)?\d{1,2}월", message)
+            or any(word in message for word in (
+                "이번 달", "이번달", "지난 달", "지난달", "저번 달",
+                "저번달", "월별", "월간", "올해", "작년", "지난해",
+            ))
+        )
+        consumption_metric = any(word in message for word in (
+            "소비", "지출", "결제", "구매", "영수증", "탄소배출",
+            "탄소 배출", "탄소발자국", "탄소 발자국", "배출량",
+        ))
+        if period_reference and consumption_metric:
+            print("[FeedbackService] use_consumption_context=True reason=period_statistics")
+            return True
+
         # 2. 자신의 소비/영수증/구매 기록을 명시적으로 가리키는 표현
         consumption_reference_keywords = [
             "내 소비", "나의 소비", "내 소비내역", "내 소비 내역",
@@ -542,6 +583,10 @@ class FeedbackService:
             "이 제품", "그 제품", "해당 제품",
             "가장 탄소", "탄소배출이 가장", "탄소 배출이 가장",
             "배출량이 가장",
+            "소비 금액", "소비금액", "총 소비", "전체 소비",
+            "총 지출", "전체 지출", "지출 금액", "지출 내역",
+            "월별 소비", "월간 소비", "월별 지출", "월간 지출",
+            "나의 지출", "내 지출", "내 결제", "나의 결제",
         ]
         if any(keyword in message for keyword in consumption_reference_keywords):
             print(
@@ -602,7 +647,38 @@ class FeedbackService:
                         "reason=followup_consumption_history"
                     )
                     return True
-        # 5. 애매하면 검색 precision을 위해 소비내역을 강제로 넣지 않음
+        # 5. 선택된 영수증이 있는 경우 질문 의도와 함께 판단
+        if record_id is not None and summary:
+            # 명확한 일반 지식 질문은 영수증과 연결하지 않는다.
+            independent_question_patterns = [
+                "뭐야", "무엇인가", "뜻이", "정의",
+                "원리", "개념", "차이점",
+            ]
+            if any(pattern in message for pattern in independent_question_patterns):
+                print(
+                    "[FeedbackService] "
+                    "use_consumption_context=False "
+                    "reason=independent_knowledge_question"
+                )
+                return False
+
+            # 선택된 영수증에 대한 분석·평가·개선 요청
+            receipt_intent_keywords = [
+                "분석", "평가", "요약", "정리",
+                "알려줘", "보여줘", "어때",
+                "개선", "추천", "줄일",
+                "많이", "적게", "비교",
+                "어떤 점", "어떻게",
+            ]
+            if any(keyword in message for keyword in receipt_intent_keywords):
+                print(
+                    "[FeedbackService] "
+                    "use_consumption_context=True "
+                    "reason=selected_receipt_intent"
+                )
+                return True
+
+        # 6. 위 조건에 해당하지 않으면 소비 기록 제외
         print(
             "[FeedbackService] "
             "use_consumption_context=False "
@@ -1078,6 +1154,32 @@ class FeedbackService:
                 f"사용자의 최근 소비 기록 "
                 f"{summary.get('record_count', 0)}건"
             )
+        # Spring Boot의 집계 구조를 그대로 프롬프트에 제공한다.
+        # 없는 키는 "없음"으로 표시해 실제 0건과 혼동하지 않는다.
+        monthly_summary = summary.get("monthly_summary")
+        receipts = summary.get("receipts")
+        current_month = summary.get("current_month")
+        monthly_context = ""
+        if use_consumption_context and summary:
+            monthly_context = f"""
+============================================================
+[월별 소비 집계 - Spring Boot DB 제공]
+============================================================
+기준 월(current_month): {current_month if current_month is not None else '미제공'}
+월별 집계(monthly_summary): {monthly_summary if monthly_summary is not None else '미제공'}
+영수증별 내역(receipts): {receipts if receipts is not None else '미제공'}
+[월별 데이터 해석 규칙]
+- 특정 연월을 질문하면 monthly_summary의 해당 YYYY-MM 항목을 우선 사용한다.
+- monthly_summary가 제공되지 않았으면 receipts의 날짜와 금액으로 확인 가능한 범위만 답한다.
+- 전체 기간의 total_amount_krw 및 total_carbon_kg를 특정 월의 값으로 오인하지 않는다.
+- 이번 달/지난달은 제공된 current_month 기준으로 해석한다. current_month가 없다면 기준 월을 추측하지 않는다.
+- 월별 집계에 특정 월이 없으면 제공된 기록 범위에서 그 월의 데이터가 확인되지 않는다고 설명한다.
+- 미기록은 실제 소비 0원 또는 실제 탄소배출 0kg이라는 뜻이 아니다.
+- 서로 다른 월의 비교는 각각의 월별 집계값이 확인될 때만 수행한다.
+- 소비금액을 물으면 금액을, 탄소배출량을 물으면 배출량을 먼저 답한다.
+- 친환경 개선 우선순위를 묻는 경우에만 탄소배출량을 주요 기준으로 판단한다.
+- 제공된 소비 집계값은 외부 RAG 연구 수치가 없어도 답변에 사용할 수 있다.
+""".strip()
         history_context = self._build_history_context(
             chat_history=chat_history,
         )
@@ -1102,7 +1204,8 @@ class FeedbackService:
 - 현재 질문은 정량적 근거를 요구하는 질문이다.
 - 이전 AI 답변에 등장한 숫자, 비율, 단위, 연구 결과는 현재 답변의 근거가 아니다.
 - 이전 AI 답변의 수치를 그대로 반복하지 말고, 현재 제공된 소비 데이터 또는 현재 RAG 참고자료에서 동일한 수치와 단위, 비교 대상, 적용 조건을 다시 확인한다.
-- 현재 RAG 참고자료에서 해당 숫자를 직접 확인할 수 없다면 그 숫자는 답변에서 사용하지 않는다.
+- 사용자 소비금액/탄소배출량 등 DB 제공 수치는 RAG 확인 없이 사용해도 된다.
+- 외부 연구·감축 효과에 관한 수치만 현재 RAG 참고자료에서 직접 확인되지 않으면 사용하지 않는다.
 - 확인 가능한 정량 근거가 없다면 "현재 검색된 자료만으로는 정확한 수치를 확인하기 어렵다"고 설명하고 정성적인 방향만 제시한다.
 """.strip()
         else:
@@ -1160,6 +1263,7 @@ GreenStep의 친환경 소비 피드백 AI다.
 {summary.get("highest_carbon_category")}
 품목별 정보:
 {summary.get("items")}
+{monthly_context}
 ============================================================
 [이전 대화]
 ============================================================
@@ -1354,6 +1458,7 @@ GreenStep의 친환경 소비 피드백 AI다.
         user_message: str,
         consumption_summary: dict,
         chat_history: list[dict] | None = None,
+        record_id: int | None = None,
     ) -> dict:
         """
         단순 소비 조회:
@@ -1368,7 +1473,9 @@ GreenStep의 친환경 소비 피드백 AI다.
         is_quantitative_question = self._is_quantitative_question(
             user_message=user_message,
         )
-        use_rag = (
+        # DB 집계 수치 조회는 RAG의 외부 연구 수치와 섞지 않는다.
+        is_statistics_question = self._is_consumption_statistics_question(user_message)
+        use_rag = not is_statistics_question and (
             self._should_use_rag(user_message=user_message)
             or is_quantitative_question
         )
@@ -1377,6 +1484,7 @@ GreenStep의 친환경 소비 피드백 AI다.
                 user_message=user_message,
                 summary=consumption_summary,
                 chat_history=chat_history,
+                record_id=record_id,
             )
         )
         rag_category = None
@@ -1681,7 +1789,7 @@ GreenStep 관리비 상담 AI입니다.
             "rag_category": None,
             "rag_sources": [],
         }
-    
+
     def chat(
         self,
         user_id: int,
@@ -1784,6 +1892,7 @@ GreenStep 관리비 상담 AI입니다.
             user_message=user_message,
             consumption_summary=summary,
             chat_history=chat_history,
+            record_id=record_id,
         )
 
         feedback_text = generated["feedback"]
