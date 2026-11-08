@@ -20,7 +20,12 @@ def preprocess_image(image_bytes: bytes) -> bytes:
     img.save(buf, format="JPEG", quality=95)
     return buf.getvalue()
 
-def extract_text_from_image(image_bytes: bytes) -> str:
+def extract_text_and_quality(image_bytes: bytes) -> tuple[str, dict]:
+    """
+    Vision OCR 텍스트와 글자 인식 품질 통계를 함께 반환한다.
+
+    통계: word_mean(단어 평균 신뢰도), word_low(신뢰도 0.6 미만 단어 비율), words(단어 수)
+    """
     client = vision.ImageAnnotatorClient()
 
     image_bytes = preprocess_image(image_bytes)
@@ -32,6 +37,7 @@ def extract_text_from_image(image_bytes: bytes) -> str:
 
     # OCR confidence 기반 품질 검증
     pages = response.full_text_annotation.pages if response.full_text_annotation else []
+    word_conf: list[float] = []
     if pages:
         confidences = [
             block.confidence
@@ -42,8 +48,31 @@ def extract_text_from_image(image_bytes: bytes) -> str:
         if confidences and (sum(confidences) / len(confidences)) < 0.3:
             raise Exception("IMAGE_QUALITY_LOW")
 
+        word_conf = [
+            word.confidence
+            for page in pages
+            for block in page.blocks
+            for paragraph in block.paragraphs
+            for word in paragraph.words
+        ]
+
+    stats = {
+        "words": len(word_conf),
+        "word_mean": round(sum(word_conf) / len(word_conf), 3) if word_conf else 0.0,
+        "word_low": (
+            round(sum(1 for c in word_conf if c < 0.6) / len(word_conf), 3)
+            if word_conf
+            else 1.0
+        ),
+    }
+
     # document_text_detection의 레이아웃 인식 결과 사용
     if response.full_text_annotation:
-        return response.full_text_annotation.text
+        return response.full_text_annotation.text, stats
 
-    return ""
+    return "", stats
+
+
+def extract_text_from_image(image_bytes: bytes) -> str:
+    text, _ = extract_text_and_quality(image_bytes)
+    return text

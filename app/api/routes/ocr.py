@@ -41,6 +41,71 @@ classifier = MerchantClassifier()
 
 
 # ============================================================
+# 검증 거절 메시지 / 중복 영수증 확인
+# ============================================================
+
+_REJECT_MESSAGES = {
+    "NOT_A_RECEIPT": (
+        "영수증이 아닌 것 같아요. "
+        "결제 내역이 적힌 영수증을 올려 주세요."
+    ),
+    "REFUND": (
+        "환불·취소 영수증은 등록할 수 없어요."
+    ),
+    "UNREADABLE": (
+        "글자가 흐리거나 번져서 금액을 정확히 읽지 못했어요. "
+        "밝은 곳에서 영수증을 평평하게 펴고 다시 촬영해주세요."
+    ),
+}
+
+
+def _find_duplicate_record(
+    conn,
+    user_id: Optional[int],
+    fingerprint: Optional[str],
+) -> Optional[int]:
+    """
+    같은 사용자가 이미 등록한 영수증이면 그 기록 번호를 반환한다.
+
+    백엔드가 AI 응답을 consumption_records.ocr_data(JSON 문자열)에 그대로
+    저장하므로, 응답에 포함된 receipt_fingerprint 로 찾는다.
+    확인에 실패해도 업로드 자체는 막지 않는다.
+    """
+    if user_id is None or not fingerprint:
+        return None
+
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute(
+            """
+            SELECT record_id
+            FROM consumption_records
+            WHERE user_id = %s
+              AND ocr_status IS DISTINCT FROM 'FAILED'
+              AND ocr_data LIKE %s
+            LIMIT 1;
+            """,
+            (
+                user_id,
+                f'%"receipt_fingerprint":"{fingerprint}"%',
+            ),
+        )
+
+        row = cursor.fetchone()
+
+        return row[0] if row else None
+
+    except Exception:
+        logger.exception("중복 영수증 확인 실패 (업로드는 계속 진행)")
+        conn.rollback()
+        return None
+
+    finally:
+        cursor.close()
+
+
+# ============================================================
 # 카테고리 응답 변환
 # ============================================================
 
@@ -475,6 +540,51 @@ async def ocr_classify(
         )
 
     # ========================================================
+    # 검증 결과: 영수증이 아니거나 숫자를 믿을 수 없는 경우 거절
+    # ========================================================
+
+    quality = parsed.get("quality") or {}
+
+    if quality.get("level") == "unreadable":
+
+        reason = quality.get("reason")
+
+        raise HTTPException(
+            status_code=422,
+            detail=_REJECT_MESSAGES.get(
+                reason,
+                _REJECT_MESSAGES["UNREADABLE"],
+            ),
+        )
+
+    # ========================================================
+    # 이미 등록한 영수증인지 확인
+    # ========================================================
+
+    fingerprint = parsed.get(
+        "receipt_fingerprint"
+    )
+
+    duplicate_record_id = _find_duplicate_record(
+        conn,
+        user_id,
+        fingerprint,
+    )
+
+    if duplicate_record_id is not None:
+
+        logger.info(
+            "중복 영수증 업로드 차단: user_id=%s, 기존 record_id=%s",
+            user_id,
+            duplicate_record_id,
+        )
+
+        raise HTTPException(
+            status_code=409,
+            detail="이미 등록한 영수증이에요.",
+        )
+
+    # ========================================================
     # 가맹점
     # ========================================================
 
@@ -735,6 +845,12 @@ async def ocr_classify(
 
         image_save_error=
             image_save_error,
+
+        receipt_fingerprint=
+            fingerprint,
+
+        quality=
+            quality or None,
     )
 
     # ========================================================
